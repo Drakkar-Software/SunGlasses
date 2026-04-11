@@ -1,0 +1,71 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { ConsentManager } from '../ConsentManager.js';
+import { createLogger } from '../utils/logger.js';
+
+// In-memory IStorageAdapter for tests
+function makeStorage(initial: Record<string, string> = {}) {
+  const store = { ...initial };
+  return {
+    read: async (key: string) => store[key] ?? null,
+    write: async (key: string, value: string) => { store[key] = value; },
+    delete: async (key: string) => { delete store[key]; },
+    _store: store,
+  };
+}
+
+describe('ConsentManager', () => {
+  const logger = createLogger(false);
+
+  it('defaults to opted-out when defaultOptIn=false and no persisted state', async () => {
+    const storage = makeStorage();
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(false);
+    expect(mgr.status).toBe('opted-out');
+    expect(mgr.isOptedIn()).toBe(false);
+    expect(mgr.isOptedOut()).toBe(true);
+  });
+
+  it('defaults to opted-in when defaultOptIn=true and no persisted state', async () => {
+    const storage = makeStorage();
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(true);
+    expect(mgr.status).toBe('opted-in');
+  });
+
+  it('loads persisted consent state', async () => {
+    const storage = makeStorage({
+      'sunglasses:consent': JSON.stringify({ status: 'opted-in', updatedAt: '2024-01-01T00:00:00.000Z' }),
+    });
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(false);
+    expect(mgr.status).toBe('opted-in');
+  });
+
+  it('transitions opted-out → opted-in via optIn()', async () => {
+    const storage = makeStorage();
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(false);
+    await mgr.optIn();
+    expect(mgr.status).toBe('opted-in');
+    expect(mgr.isOptedIn()).toBe(true);
+  });
+
+  it('transitions opted-in → opted-out via optOut()', async () => {
+    const storage = makeStorage();
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(true);
+    await mgr.optOut();
+    expect(mgr.status).toBe('opted-out');
+    expect(mgr.isOptedOut()).toBe(true);
+  });
+
+  it('persists consent changes to storage', async () => {
+    const storage = makeStorage();
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(false);
+    await mgr.optIn();
+    const persisted = JSON.parse(storage._store['sunglasses:consent']);
+    expect(persisted.status).toBe('opted-in');
+    expect(persisted.updatedAt).toBeTruthy();
+  });
+});

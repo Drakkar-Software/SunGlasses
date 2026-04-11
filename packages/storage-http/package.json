@@ -1,0 +1,33 @@
+{
+  "name": "@sunglasses/storage-http",
+  "version": "0.1.0",
+  "description": "Batched HTTP push analytics adapter for SunGlasses",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "dependencies": {
+    "@sunglasses/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@sunglasses/tsconfig": "workspace:*",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

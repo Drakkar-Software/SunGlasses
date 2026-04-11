@@ -1,0 +1,30 @@
+{
+  "name": "example-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@sunglasses/core": "workspace:*",
+    "@sunglasses/react": "workspace:*",
+    "@sunglasses/storage-http": "workspace:*",
+    "@sunglasses/storage-localstorage": "workspace:*",
+    "@sunglasses/adapter-starfish": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@sunglasses/tsconfig": "workspace:*",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@sunglasses/core": ["../../packages/core/src/index.ts"],
+      "@sunglasses/react-native": ["../../packages/react-native/src/index.ts"],
+      "@sunglasses/storage-async-storage": ["../../packages/storage-async-storage/src/index.ts"],
+      "@sunglasses/storage-http": ["../../packages/storage-http/src/index.ts"],
+      "@sunglasses/adapter-starfish": ["../../packages/adapter-starfish/src/index.ts"]
+    }
+  }
+}

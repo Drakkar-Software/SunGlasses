@@ -1,0 +1,45 @@
+{
+  "name": "@sunglasses/react-native",
+  "version": "0.1.0",
+  "description": "React Native / Expo provider and hooks for SunGlasses event tracking",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "dependencies": {
+    "@sunglasses/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "expo-router": ">=3.0.0",
+    "react": ">=18.0.0",
+    "react-native": ">=0.73.0"
+  },
+  "peerDependenciesMeta": {
+    "expo-router": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@sunglasses/tsconfig": "workspace:*",
+    "@types/react": "^18.3.12",
+    "react": "^18.3.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
