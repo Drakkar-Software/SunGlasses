@@ -43,7 +43,9 @@ export function scheduleRetry(
 }
 
 function computeDelay(attempt: number, config: RetryConfig): number {
-  const exponential = config.baseDelayMs * Math.pow(2, attempt);
+  // Cap the exponent at 30 to prevent floating-point overflow (2^1024 = Infinity)
+  const safeAttempt = Math.min(attempt, 30);
+  const exponential = config.baseDelayMs * Math.pow(2, safeAttempt);
   const jitter = Math.random() * config.baseDelayMs;
   return Math.min(exponential + jitter, config.maxDelayMs);
 }

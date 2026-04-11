@@ -40,10 +40,10 @@ export function useExpoRouterScreenTracking(
     return;
   }
 
+  const { screenNameMapper } = options;
   useEffect(() => {
     if (!pathname) return;
-    const name = options.screenNameMapper ? options.screenNameMapper(pathname) : pathname;
+    const name = screenNameMapper ? screenNameMapper(pathname) : pathname;
     client.screen(name, { $path: pathname });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+  }, [pathname, screenNameMapper, client]);
 }

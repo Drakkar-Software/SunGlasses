@@ -203,8 +203,15 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
     try {
       const response = await this.push(path, doc, '');
 
-      if (response.ok || response.status === 409) {
-        // 409 on a brand-new path is unexpected but harmless — advance anyway
+      if (response.ok) {
+        await this.saveGeneration(identity, gen + 1);
+      } else if (response.status === 409) {
+        // 409 on a brand-new path means the document already exists (shouldn't
+        // happen in rotating mode). Advance generation to skip this path so
+        // subsequent pushes use a fresh, collision-free path.
+        console.warn(
+          `[SunGlasses] StarfishAnalyticsAdapter: unexpected 409 at rotating path "${path}" — advancing generation`
+        );
         await this.saveGeneration(identity, gen + 1);
       } else {
         console.warn(

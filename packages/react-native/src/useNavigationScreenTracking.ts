@@ -52,6 +52,10 @@ export function useNavigationScreenTracking(
   const clientRef = useRef(client);
   clientRef.current = client;
 
+  // Extract from options object so the dep array holds a stable primitive/function
+  // reference rather than the options object itself (avoids stale closures).
+  const { screenNameMapper } = options;
+
   useEffect(() => {
     const ref = navigationRef.current;
     if (!ref) return;
@@ -60,7 +64,7 @@ export function useNavigationScreenTracking(
       const state = ref.getRootState();
       const routeName = getActiveRouteName(state);
       if (!routeName) return;
-      const name = options.screenNameMapper ? options.screenNameMapper(routeName) : routeName;
+      const name = screenNameMapper ? screenNameMapper(routeName) : routeName;
       clientRef.current.screen(name, { $route: routeName });
     };
 
@@ -70,5 +74,5 @@ export function useNavigationScreenTracking(
     return () => {
       stateListener.remove();
     };
-  }, [navigationRef, options.screenNameMapper]);
+  }, [navigationRef, screenNameMapper]);
 }

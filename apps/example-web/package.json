@@ -16,6 +16,7 @@
     "@sunglasses/storage-http": "workspace:*",
     "@sunglasses/storage-localstorage": "workspace:*",
     "@sunglasses/adapter-starfish": "workspace:*",
+    "@sunglasses/adapter-console": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

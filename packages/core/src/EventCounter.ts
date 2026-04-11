@@ -98,15 +98,16 @@ export class EventCounter implements IEventCounter {
       const seenKeys = new Set<string>(allKeys);
       const periods: EventCountPeriod[] = ['daily', 'weekly', 'monthly', 'all-time'];
 
+      // Extract unique sanitized event names from known written keys once,
+      // before the loop. Key format: sunglasses:count:{period}:{bucket}:{eventName}
+      // Event names are sanitized in storageKey() so the last segment is safe to split on.
+      const eventNames = new Set<string>(
+        allKeys.map((k) => k.split(':').pop()!).filter(Boolean)
+      );
+
       for (let i = 0; i < 90; i++) {
         const d = new Date(now);
         d.setDate(d.getDate() - i);
-
-        // Extract unique event names from known written keys
-        // (format: sunglasses:count:{period}:{bucket}:{eventName})
-        const eventNames = new Set<string>(
-          allKeys.map((k) => k.split(':').pop()!).filter(Boolean)
-        );
 
         for (const name of eventNames) {
           for (const period of periods) {

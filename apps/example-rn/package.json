@@ -17,6 +17,7 @@
     "@sunglasses/storage-async-storage": "workspace:*",
     "@sunglasses/storage-http": "workspace:*",
     "@sunglasses/adapter-starfish": "workspace:*",
+    "@sunglasses/adapter-console": "workspace:*",
     "@react-native-async-storage/async-storage": "^2.1.0",
     "expo": "~52.0.0",
     "expo-router": "~4.0.0",

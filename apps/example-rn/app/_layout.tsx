@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 import { SunglassesCore } from '@sunglasses/core';
 import { SunglassesProvider, useSunglasses, useExpoRouterScreenTracking } from '@sunglasses/react-native';
 import { AsyncStorageAdapter } from '@sunglasses/storage-async-storage';
+import { ConsoleAdapter } from '@sunglasses/adapter-console';
 import type { ISunglassesClient } from '@sunglasses/core';
 
 /**
@@ -30,17 +31,13 @@ export default function RootLayout(): React.ReactElement | null {
   useEffect(() => {
     const storage = new AsyncStorageAdapter();
 
-    // Console adapter for demo — replace with HttpStorageAdapter in production
-    const consoleAdapter = {
-      async send(batch: unknown[]) {
-        console.log('[SunGlasses demo] Events flushed:', JSON.stringify(batch, null, 2));
-      },
-    };
+    // ConsoleAdapter — pretty-prints events during development.
+    // Replace with (or add alongside) HttpStorageAdapter for production.
+    const consoleAdapter = new ConsoleAdapter({ verbose: false });
 
     // Uncomment to push to a real server:
     // const httpAdapter = new HttpStorageAdapter({
     //   endpoint: 'https://your-server.example.com/ingest',
-    //   flushIntervalMs: 10_000,
     // });
 
     SunglassesCore.create({
@@ -51,6 +48,7 @@ export default function RootLayout(): React.ReactElement | null {
       appName: 'example-rn',
       appVersion: '0.1.0',
       debug: __DEV__,
+      enableSessionTracking: true,
     })
       .then(setClient)
       .catch(console.error);

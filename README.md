@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./logo.png" alt="SunGlasses" width="320" />
+</p>
+
 # SunGlasses
 
 Privacy-first event tracking for Expo / React Native and web apps.

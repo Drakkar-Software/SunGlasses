@@ -14,6 +14,7 @@ SunGlasses is a privacy-first event tracking library distributed as a TypeScript
 @sunglasses/storage-async-storage AsyncStorage adapter (React Native)
 @sunglasses/storage-http          Batched HTTP push adapter (output destination)
 @sunglasses/adapter-starfish      Starfish document-sync adapter
+@sunglasses/adapter-console       Dev-only console pretty-printer adapter
 @sunglasses/tsconfig              Shared TypeScript configs (private)
 ```
 
@@ -26,7 +27,8 @@ Package dependency graph (runtime, not devDeps):
 ├── @sunglasses/storage-localstorage
 ├── @sunglasses/storage-async-storage
 ├── @sunglasses/storage-http
-└── @sunglasses/adapter-starfish
+├── @sunglasses/adapter-starfish
+└── @sunglasses/adapter-console
 ```
 
 ## Prerequisites
@@ -134,14 +136,18 @@ function makeStorage() {
 ```
 
 ### Testing with fake timers
-`SunglassesCore` uses `setInterval` for auto-flush. Use Vitest's fake timers:
+`SunglassesCore` uses `setInterval` for auto-flush. Use Vitest's fake timers.
+Important: use `vi.advanceTimersByTimeAsync(100)` rather than `vi.runAllTimersAsync()` —
+the latter runs all timers until exhaustion and will loop forever on the flush interval.
+
 ```ts
 beforeEach(() => vi.useFakeTimers());
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 it('...', async () => {
   const client = await SunglassesCore.create({ ... });
   client.capture('event');
-  await vi.runAllTimersAsync(); // let the enqueue microtask settle
+  await vi.advanceTimersByTimeAsync(100); // let the enqueue microtask settle (< 30 s interval)
   await client.flush();
   expect(adapter.batches.length).toBe(1);
 });
@@ -171,8 +177,9 @@ Middleware tests should cover:
 ```ts
 class MyAdapter implements IAnalyticsAdapter {
   // REQUIRED: deliver a batch of events
-  async send(batch: SunglassesEvent[]): Promise<void> {
-    // 1. Never mutate batch — it is Object.freeze'd by SunglassesCore
+  // batch is ReadonlyArray — do NOT mutate it (also Object.freeze'd at runtime)
+  async send(batch: ReadonlyArray<SunglassesEvent>): Promise<void> {
+    // 1. Never mutate batch
     // 2. If delivery fails, throw — the core will keep events in the queue
     // 3. Do not log distinctId or traits
   }
@@ -184,7 +191,7 @@ class MyAdapter implements IAnalyticsAdapter {
   async shutdown(): Promise<void> {}
 
   // OPTIONAL: called after a successful flush with cleanupAfterFlush config
-  async cleanupAfterFlush(delivered: SunglassesEvent[], config: CleanupConfig): Promise<void> {
+  async cleanupAfterFlush(delivered: ReadonlyArray<SunglassesEvent>, config: CleanupConfig): Promise<void> {
     // Never throws — log and swallow errors
   }
 }

@@ -348,10 +348,12 @@ export class SunglassesCore implements ISunglassesClient {
   async exportUserData(): Promise<UserDataExport> {
     const identityState = this.identity.getState();
 
+    // Snapshot the queue once — reused for both the export and count summary
+    const queuedEvents = this.queue.peek(this.config.maxQueueSize);
+
     // Build event count summary if counting is enabled
     const eventCountSummary: UserDataExport['eventCountSummary'] = {};
     if (this._eventCounter) {
-      const queuedEvents = this.queue.peek(this.config.maxQueueSize);
       const eventNames = [...new Set(queuedEvents.map((e) => e.event))];
       for (const name of eventNames) {
         const [daily, weekly, monthly, allTime] = await Promise.all([
@@ -371,7 +373,7 @@ export class SunglassesCore implements ISunglassesClient {
       consentStatus: this.consent.status,
       consentHistory: this.consent.getHistory(),
       traits: this.traitManager.getTraits(),
-      queuedEvents: this.queue.peek(this.config.maxQueueSize),
+      queuedEvents,
       archivedEvents: this.localArchive ? this.localArchive.getAll() : [],
       eventCountSummary,
     };
@@ -395,14 +397,16 @@ export class SunglassesCore implements ISunglassesClient {
 
     const identityState = this.identity.getState();
 
-    // Session management — get or create session, detect new sessions
+    // Session management — get or create session, detect new sessions.
+    // Compare IDs (not just null-check) so that idle-expired sessions are
+    // also detected: `before` may be a non-null ID that just expired.
     let sessionId: string | undefined;
     let isNewSession = false;
     if (this.sessionManager) {
       const before = this.sessionManager.sessionId;
       const session = this.sessionManager.getOrCreate();
       sessionId = session.sessionId;
-      isNewSession = before === null && session.eventCount === 0;
+      isNewSession = before !== session.sessionId;
     }
 
     const event: SunglassesEvent = {

@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react';
 import type { ISunglassesClient, ScreenTrackingOptions } from '@sunglasses/core';
 
+// Module-level guard: track whether history methods are currently patched.
+// Prevents stacking multiple patches if the hook is accidentally mounted more
+// than once at the same time (e.g. two components both calling useScreenTracking).
+let historyPatched = false;
+
 /**
  * Web screen tracking via the History API.
  *
@@ -8,7 +13,9 @@ import type { ISunglassesClient, ScreenTrackingOptions } from '@sunglasses/core'
  * the popstate event. Fires client.screen() on every navigation.
  *
  * Must be called inside a component that has access to the SunGlasses client,
- * typically inside SunglassesProvider.
+ * typically inside SunglassesProvider. Only one instance of this hook should
+ * be active at a time — mounting it in multiple components simultaneously will
+ * result in the second instance being a no-op until the first unmounts.
  */
 export function useScreenTracking(
   client: ISunglassesClient,
@@ -20,6 +27,16 @@ export function useScreenTracking(
 
   useEffect(() => {
     if (!useHistoryApi || typeof window === 'undefined') return;
+
+    // Bail out if another instance already owns the patch
+    if (historyPatched) {
+      console.warn(
+        '[SunGlasses] useScreenTracking: history is already patched by another instance — this instance will not track.'
+      );
+      return;
+    }
+
+    historyPatched = true;
 
     const resolveName = (path: string): string =>
       screenNameMapper ? screenNameMapper(path) : path;
@@ -54,6 +71,7 @@ export function useScreenTracking(
       history.pushState = originalPush;
       history.replaceState = originalReplace;
       window.removeEventListener('popstate', onPopState);
+      historyPatched = false;
     };
   }, [useHistoryApi, screenNameMapper]);
 }
