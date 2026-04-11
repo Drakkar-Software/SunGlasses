@@ -1,6 +1,6 @@
 import type { ISunglassesClient } from '@sunglasses/core';
 
-const UTM_PARAMS = [
+export const UTM_PARAMS = [
   'utm_source',
   'utm_medium',
   'utm_campaign',
@@ -33,7 +33,12 @@ export function captureDeepLinkUtmParams(client: ISunglassesClient, url: string)
   try {
     const queryStart = url.indexOf('?');
     if (queryStart === -1) return;
-    const searchParams = new URLSearchParams(url.slice(queryStart + 1));
+    // Strip any fragment (#...) before parsing — URLSearchParams has no concept
+    // of fragments and would otherwise include them in the last parameter's value.
+    let qs = url.slice(queryStart + 1);
+    const hashIdx = qs.indexOf('#');
+    if (hashIdx !== -1) qs = qs.slice(0, hashIdx);
+    const searchParams = new URLSearchParams(qs);
     for (const key of UTM_PARAMS) {
       const value = searchParams.get(key);
       if (value) params[key] = value;

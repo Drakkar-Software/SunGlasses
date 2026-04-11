@@ -1,14 +1,7 @@
 import { useEffect } from 'react';
 import type { ISunglassesClient } from '@sunglasses/core';
 import { useGlobalSearchParams } from './expoRouterCompat.js';
-
-const UTM_PARAMS = [
-  'utm_source',
-  'utm_medium',
-  'utm_campaign',
-  'utm_content',
-  'utm_term',
-] as const;
+import { UTM_PARAMS } from './captureDeepLinkUtmParams.js';
 
 /**
  * Expo Router UTM capture hook.
@@ -46,7 +39,6 @@ export function useExpoRouterUtmCapture(client: ISunglassesClient): void {
   // and its availability does not change during the component's lifetime.
   const params = useGlobalSearchParams<Record<string, string | string[]>>();
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     const utmParams: Record<string, string> = {};
     for (const key of UTM_PARAMS) {

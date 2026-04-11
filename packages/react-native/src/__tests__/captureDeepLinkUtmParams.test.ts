@@ -82,6 +82,20 @@ describe('captureDeepLinkUtmParams', () => {
     expect(client.register).not.toHaveBeenCalled();
   });
 
+  it('strips URL fragments so they do not corrupt param values', () => {
+    const client = makeClient();
+    captureDeepLinkUtmParams(
+      client as unknown as ISunglassesClient,
+      'https://myapp.com/promo?utm_source=email&utm_campaign=sale#hero-section'
+    );
+
+    // utm_campaign must be "sale", not "sale#hero-section"
+    expect(client.register).toHaveBeenCalledWith({
+      utm_source: 'email',
+      utm_campaign: 'sale',
+    });
+  });
+
   it('is a no-op and does not throw for an empty string', () => {
     const client = makeClient();
     expect(() =>
