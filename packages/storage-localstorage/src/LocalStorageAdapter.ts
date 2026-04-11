@@ -24,8 +24,12 @@ export class LocalStorageAdapter implements IStorageAdapter {
   async write(key: string, value: string): Promise<void> {
     try {
       globalThis.localStorage.setItem(this.prefixed(key), value);
-    } catch {
-      // localStorage may throw in private/incognito mode or when quota is exceeded
+    } catch (err) {
+      // Quota exceeded: actionable — warn so developers know data isn't persisting
+      if (err instanceof Error && err.name === 'QuotaExceededError') {
+        console.warn('[SunGlasses] LocalStorageAdapter: storage quota exceeded — event data may not persist');
+      }
+      // Other errors (private/incognito mode, security restrictions) are expected and safe to ignore
     }
   }
 

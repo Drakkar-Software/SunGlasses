@@ -39,6 +39,16 @@ export class EventQueue {
 
   /** Add an event to the queue. Triggers async persistence (debounced). */
   enqueue(event: SunglassesEvent): void {
+    // Guard: ensure the event can be JSON-serialised before it enters the queue.
+    // SunglassesEvent properties come from user code and could contain circular
+    // references or non-serialisable values (e.g. Functions).
+    try {
+      JSON.stringify(event);
+    } catch {
+      this.logger.warn('EventQueue: event contains non-serialisable data — dropped', event.event);
+      return;
+    }
+
     if (this.queue.length >= this.maxSize) {
       // Drop the oldest event to make room
       this.queue.shift();

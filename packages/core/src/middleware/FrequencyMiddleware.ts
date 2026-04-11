@@ -88,7 +88,17 @@ export class FrequencyMiddleware implements IMiddleware {
   }
 }
 
-/** Map a period to a property key, e.g. 'all-time' → '$count_all_time' */
+/**
+ * Map a period to a property key.
+ * Uses an explicit lookup to avoid ambiguity with hyphen-to-underscore replacement.
+ * e.g. 'all-time' → '$count_all_time', 'daily' → '$count_daily'
+ */
 function periodPropKey(period: EventCountPeriod): string {
-  return `$count_${period.replace('-', '_')}`;
+  const keys: Record<EventCountPeriod, string> = {
+    'daily': '$count_daily',
+    'weekly': '$count_weekly',
+    'monthly': '$count_monthly',
+    'all-time': '$count_all_time',
+  };
+  return keys[period];
 }

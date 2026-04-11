@@ -81,7 +81,8 @@ export class LocalEventArchive {
 
   /**
    * Prune archived events by age and/or count.
-   * If neither `maxAgeMs` nor `maxEventsPerIdentity` is set, nothing is removed.
+   * `maxEventsPerIdentity` is applied **per distinctId** — each identity keeps its
+   * most recent N events independently. If neither option is set, nothing is removed.
    */
   async cleanup(config: CleanupConfig = {}): Promise<void> {
     let filtered = [...this.events];
@@ -96,8 +97,22 @@ export class LocalEventArchive {
     }
 
     const maxN = config.maxEventsPerIdentity ?? 0;
-    if (maxN > 0 && filtered.length > maxN) {
-      filtered = filtered.slice(filtered.length - maxN);
+    if (maxN > 0) {
+      // Group by distinctId, keep the most recent N per identity, then flatten
+      // preserving the original chronological order across identities.
+      const byIdentity = new Map<string, SunglassesEvent[]>();
+      for (const event of filtered) {
+        const id = event.distinctId;
+        if (!byIdentity.has(id)) byIdentity.set(id, []);
+        byIdentity.get(id)!.push(event);
+      }
+      const kept = new Set<string>();
+      for (const events of byIdentity.values()) {
+        // events are chronological; take the last maxN
+        const slice = events.slice(Math.max(0, events.length - maxN));
+        for (const e of slice) kept.add(e.messageId);
+      }
+      filtered = filtered.filter((e) => kept.has(e.messageId));
     }
 
     this.events = filtered;

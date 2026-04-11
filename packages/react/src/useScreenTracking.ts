@@ -25,6 +25,12 @@ export function useScreenTracking(
   const clientRef = useRef(client);
   clientRef.current = client;
 
+  // Keep the mapper in a ref so patched history methods always call the latest
+  // version without needing to re-run the effect when the function reference
+  // changes (which would cause unnecessary unpatch → repatch cycles).
+  const mapperRef = useRef(screenNameMapper);
+  mapperRef.current = screenNameMapper;
+
   useEffect(() => {
     if (!useHistoryApi || typeof window === 'undefined') return;
 
@@ -38,11 +44,9 @@ export function useScreenTracking(
 
     historyPatched = true;
 
-    const resolveName = (path: string): string =>
-      screenNameMapper ? screenNameMapper(path) : path;
-
     const handleRouteChange = (path: string): void => {
-      clientRef.current.screen(resolveName(path), { $url: path });
+      const name = mapperRef.current ? mapperRef.current(path) : path;
+      clientRef.current.screen(name, { $url: path });
     };
 
     // Track initial page view
@@ -73,5 +77,5 @@ export function useScreenTracking(
       window.removeEventListener('popstate', onPopState);
       historyPatched = false;
     };
-  }, [useHistoryApi, screenNameMapper]);
+  }, [useHistoryApi]); // screenNameMapper is accessed via ref — no dep needed
 }

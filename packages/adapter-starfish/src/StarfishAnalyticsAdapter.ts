@@ -77,6 +77,17 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
     if (batch.length === 0) return;
 
     const identity = batch[0].distinctId || batch[0].anonymousId;
+
+    // Warn if the batch contains events from different identities — this is unexpected
+    // (SunglassesCore always flushes a single-identity queue) but could happen if
+    // the adapter is used directly or identity changed mid-batch.
+    if (batch.some((e) => (e.distinctId || e.anonymousId) !== identity)) {
+      console.warn(
+        '[SunGlasses] StarfishAnalyticsAdapter: batch contains events from multiple identities' +
+        ' — all events will be written to the document for the first identity. This is unexpected.'
+      );
+    }
+
     const baseResolved = resolveStoragePath(this.storagePath, identity);
 
     if (this.rotatePathOnSuccess && this.pathStorage) {
@@ -206,18 +217,18 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
       if (response.ok) {
         await this.saveGeneration(identity, gen + 1);
       } else if (response.status === 409) {
-        // 409 on a brand-new path means the document already exists (shouldn't
-        // happen in rotating mode). Advance generation to skip this path so
-        // subsequent pushes use a fresh, collision-free path.
-        console.warn(
-          `[SunGlasses] StarfishAnalyticsAdapter: unexpected 409 at rotating path "${path}" — advancing generation`
-        );
+        // 409 means a document already exists at this path — advance generation
+        // to skip the collision, then throw so SunglassesCore keeps the batch
+        // in the queue and retries on next flush with the new (non-colliding) path.
         await this.saveGeneration(identity, gen + 1);
+        throw new Error(
+          `[SunGlasses] StarfishAnalyticsAdapter: 409 conflict at rotating path "${path}" — generation advanced, will retry`
+        );
       } else {
+        // Non-retriable failure — discard batch but keep generation for next flush
         console.warn(
           `[SunGlasses] StarfishAnalyticsAdapter: rotating push failed with status ${response.status} for path "${path}"`
         );
-        // Keep generation as-is — next flush will retry with the same path
       }
     } catch (err) {
       console.warn(
