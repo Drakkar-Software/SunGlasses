@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-04-11
+
+### Added
+
+- **`@sunglasses/error-capture`** — new package: captures errors as SunGlasses `$error` events
+  - `createSentryBeforeSend(client, config?, originalBeforeSend?)` — Sentry bridge that intercepts errors via Sentry's `beforeSend` callback and fires them as `client.capture('$error', ...)` events; works with `@sentry/browser`, `@sentry/react`, and `@sentry/react-native`; no `@sentry/*` runtime dependency required
+  - Set `suppressSentrySend: true` to drop the event from Sentry's transmission queue (return `null` from `beforeSend`), letting Sentry act as a local error capture engine with no data leaving the device; compatible with omitting the DSN entirely
+  - `SunglassesErrorBoundary` — React error boundary component that captures render-phase errors with `$error_handled: true`; complements the Sentry bridge for errors caught at component boundaries
+  - All captured errors run through the existing PiiSanitizer middleware automatically
+  - Privacy-safe defaults: `includeStack: false`, `maxMessageLength: 200`; full `SentryBridgeConfig` for opt-in stack frames, message truncation, ignore patterns, and `beforeCapture` transform
+
 ## [0.2.1] — 2026-04-11
 
 ### Added

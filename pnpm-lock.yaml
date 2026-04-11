@@ -187,6 +187,37 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.6.0)(happy-dom@15.11.7)(lightningcss@1.27.0)(terser@5.46.1)
 
+  packages/error-capture:
+    dependencies:
+      '@sunglasses/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@sunglasses/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.28
+      happy-dom:
+        specifier: ^15.11.7
+        version: 15.11.7
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.9)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.6.0)(happy-dom@15.11.7)(lightningcss@1.27.0)(terser@5.46.1)
+
   packages/react:
     dependencies:
       '@sunglasses/core':
@@ -1593,7 +1624,7 @@ packages:
 
   '@expo/bunyan@4.0.1':
     resolution: {integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==}
-    engines: {node: '>=0.10.0'}
+    engines: {'0': node >=0.10.0}
 
   '@expo/cli@0.22.28':
     resolution: {integrity: sha512-lvt72KNitGuixYD2l3SZmRKVu2G4zJpmg5V7WfUBNpmUU5oODBw/6qmiJ6kSLAlfDozscUk+BBGknBBzxUrwrA==}

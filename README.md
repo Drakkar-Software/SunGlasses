@@ -29,6 +29,7 @@ Track screen views, button taps, and custom events — with built-in PII sanitiz
 | `@sunglasses/storage-http` | Any | Batched HTTP push output adapter |
 | `@sunglasses/adapter-starfish` | Any | Drakkar-Software/Starfish document-sync adapter |
 | `@sunglasses/adapter-console` | Any | Development adapter — pretty-prints events to console |
+| `@sunglasses/error-capture` | Web / RN | Sentry bridge + React error boundary for `$error` events |
 
 ## Quickstart — Web (React + Vite)
 
@@ -445,6 +446,76 @@ class SecureStorageAdapter implements IStorageAdapter {
   }
 }
 ```
+
+## Error Capture (`@sunglasses/error-capture`)
+
+Capture unhandled errors as `$error` analytics events using the Sentry bridge. All errors run through the existing PiiSanitizer middleware automatically.
+
+```bash
+pnpm add @sunglasses/error-capture
+```
+
+### Sentry bridge — both Sentry and SunGlasses receive errors
+
+```ts
+import * as Sentry from '@sentry/browser'; // or @sentry/react-native
+import { createSentryBeforeSend } from '@sunglasses/error-capture';
+
+Sentry.init({
+  dsn: 'https://...',
+  beforeSend: createSentryBeforeSend(client),
+});
+```
+
+### SunGlasses only — Sentry as local error processor, no data sent to Sentry servers
+
+```ts
+import * as Sentry from '@sentry/browser';
+import { createSentryBeforeSend } from '@sunglasses/error-capture';
+
+// No DSN needed. Sentry attaches global error handlers and fires beforeSend,
+// but transmits nothing. Set suppressSentrySend: true to return null from beforeSend.
+Sentry.init({
+  beforeSend: createSentryBeforeSend(client, { suppressSentrySend: true }),
+});
+```
+
+### React error boundary
+
+Catches render-phase errors before they reach Sentry's global handler:
+
+```tsx
+import { SunglassesErrorBoundary } from '@sunglasses/error-capture';
+
+<SunglassesErrorBoundary client={client} fallback={<ErrorPage />}>
+  <App />
+</SunglassesErrorBoundary>
+```
+
+### Configuration
+
+```ts
+createSentryBeforeSend(client, {
+  includeStack: false,      // include stack frames in $error_stack — default false (privacy)
+  maxStackFrames: 5,        // max frames when includeStack is true
+  maxMessageLength: 200,    // truncate error messages — error msgs can contain PII
+  ignorePatterns: [/ResizeObserver/],  // skip errors matching these patterns
+  suppressSentrySend: true, // return null from beforeSend — Sentry won't transmit
+  beforeCapture: (props) => ({ ...props, app_version: '1.2.0' }), // transform or drop (null)
+});
+```
+
+Captured events have event name `$error` and these properties:
+
+| Property | Description |
+|----------|-------------|
+| `$error_message` | `Error.message` (truncated to `maxMessageLength`) |
+| `$error_type` | `Error.name` (e.g. `"TypeError"`) |
+| `$error_handled` | `false` for unhandled; `true` from `SunglassesErrorBoundary` |
+| `$error_level` | Sentry event level (default `"error"`) |
+| `$error_stack` | Stack frames (opt-in via `includeStack: true`) |
+
+---
 
 ## Error Handling
 
