@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
-import type { ISunglassesClient } from '@sunglasses/core';
+import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 import { SunglassesErrorBoundary } from '../SunglassesErrorBoundary.js';
 
 // ---------------------------------------------------------------------------

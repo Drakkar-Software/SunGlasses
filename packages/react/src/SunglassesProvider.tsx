@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import type { ISunglassesClient, ScreenTrackingOptions } from '@sunglasses/core';
+import type { ISunglassesClient, ScreenTrackingOptions } from '@drakkar.software/sunglasses-core';
 import { SunglassesContext } from './context.js';
 import { useScreenTracking } from './useScreenTracking.js';
 

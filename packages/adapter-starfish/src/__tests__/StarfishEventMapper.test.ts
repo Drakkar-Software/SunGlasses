@@ -5,7 +5,7 @@ import {
   pruneDocument,
   resolveStoragePath,
 } from '../StarfishEventMapper.js';
-import type { SunglassesEvent } from '@sunglasses/core';
+import type { SunglassesEvent } from '@drakkar.software/sunglasses-core';
 
 function makeEvent(id: string, timestamp: string): SunglassesEvent {
   return {
@@ -16,7 +16,7 @@ function makeEvent(id: string, timestamp: string): SunglassesEvent {
     timestamp,
     messageId: id,
     properties: {},
-    context: { library: { name: '@sunglasses/core', version: '0.1.0' }, platform: 'web' },
+    context: { library: { name: '@drakkar.software/sunglasses-core', version: '0.1.0' }, platform: 'web' },
   };
 }
 

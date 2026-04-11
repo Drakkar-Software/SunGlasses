@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { ISunglassesClient, ScreenTrackingOptions } from '@sunglasses/core';
+import type { ISunglassesClient, ScreenTrackingOptions } from '@drakkar.software/sunglasses-core';
 
 interface NavigationState {
   index: number;

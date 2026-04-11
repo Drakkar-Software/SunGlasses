@@ -1,5 +1,5 @@
 {
-  "name": "@sunglasses/core",
+  "name": "@drakkar.software/sunglasses-core",
   "version": "0.2.0",
   "description": "Platform-agnostic event tracking engine for SunGlasses",
   "main": "./dist/index.js",
@@ -24,7 +24,7 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "devDependencies": {
-    "@sunglasses/tsconfig": "workspace:*",
+    "@drakkar.software/sunglasses-tsconfig": "workspace:*",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

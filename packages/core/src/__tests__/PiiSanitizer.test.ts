@@ -11,7 +11,7 @@ function makeEvent(properties: Record<string, unknown>): SunglassesEvent {
     timestamp: '2024-01-01T00:00:00.000Z',
     messageId: 'msg-1',
     properties,
-    context: { library: { name: '@sunglasses/core', version: '0.1.0' }, platform: 'web' },
+    context: { library: { name: '@drakkar.software/sunglasses-core', version: '0.1.0' }, platform: 'web' },
   };
 }
 

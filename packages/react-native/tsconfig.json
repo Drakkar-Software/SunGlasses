@@ -1,5 +1,5 @@
 {
-  "extends": "@sunglasses/tsconfig/react-native.json",
+  "extends": "@drakkar.software/sunglasses-tsconfig/react-native.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src"

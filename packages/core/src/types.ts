@@ -290,7 +290,7 @@ export interface SunglassesConfig {
 
 /**
  * The main SDK surface. Implemented by SunglassesCore.
- * Both @sunglasses/react and @sunglasses/react-native expose this via Context.
+ * Both @drakkar.software/sunglasses-react and @drakkar.software/sunglasses-react-native expose this via Context.
  */
 export interface ISunglassesClient {
   /**

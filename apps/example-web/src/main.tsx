@@ -1,9 +1,9 @@
 import React, { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { SunglassesCore } from '@sunglasses/core';
-import { SunglassesProvider } from '@sunglasses/react';
-import { LocalStorageAdapter } from '@sunglasses/storage-localstorage';
-import { ConsoleAdapter } from '@sunglasses/adapter-console';
+import { SunglassesCore } from '@drakkar.software/sunglasses-core';
+import { SunglassesProvider } from '@drakkar.software/sunglasses-react';
+import { LocalStorageAdapter } from '@drakkar.software/sunglasses-storage-localstorage';
+import { ConsoleAdapter } from '@drakkar.software/sunglasses-adapter-console';
 import { App } from './App.js';
 
 /**

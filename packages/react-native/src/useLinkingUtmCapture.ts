@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Linking } from 'react-native';
-import type { ISunglassesClient } from '@sunglasses/core';
+import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 import { captureDeepLinkUtmParams } from './captureDeepLinkUtmParams.js';
 
 /**
@@ -20,7 +20,7 @@ import { captureDeepLinkUtmParams } from './captureDeepLinkUtmParams.js';
  * @example
  * ```tsx
  * // App.tsx
- * import { useLinkingUtmCapture } from '@sunglasses/react-native';
+ * import { useLinkingUtmCapture } from '@drakkar.software/sunglasses-react-native';
  *
  * export default function App() {
  *   const client = useSunglasses();

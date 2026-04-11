@@ -1,4 +1,4 @@
-import type { IStorageAdapter } from '@sunglasses/core';
+import type { IStorageAdapter } from '@drakkar.software/sunglasses-core';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**

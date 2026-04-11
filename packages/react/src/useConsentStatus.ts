@@ -1,4 +1,4 @@
-import type { ConsentStatus } from '@sunglasses/core';
+import type { ConsentStatus } from '@drakkar.software/sunglasses-core';
 import { useSunglasses } from './context.js';
 
 /**

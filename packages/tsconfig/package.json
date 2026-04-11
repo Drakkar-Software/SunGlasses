@@ -1,5 +1,5 @@
 {
-  "name": "@sunglasses/tsconfig",
+  "name": "@drakkar.software/sunglasses-tsconfig",
   "version": "0.1.0",
   "private": true,
   "files": ["base.json", "react.json", "react-native.json"]

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`@sunglasses/error-capture`** — new package: captures errors as SunGlasses `$error` events
+- **`@drakkar.software/sunglasses-error-capture`** — new package: captures errors as SunGlasses `$error` events
   - `createSentryBeforeSend(client, config?, originalBeforeSend?)` — Sentry bridge that intercepts errors via Sentry's `beforeSend` callback and fires them as `client.capture('$error', ...)` events; works with `@sentry/browser`, `@sentry/react`, and `@sentry/react-native`; no `@sentry/*` runtime dependency required
   - Set `suppressSentrySend: true` to drop the event from Sentry's transmission queue (return `null` from `beforeSend`), letting Sentry act as a local error capture engine with no data leaving the device; compatible with omitting the DSN entirely
   - `SunglassesErrorBoundary` — React error boundary component that captures render-phase errors with `$error_handled: true`; complements the Sentry bridge for errors caught at component boundaries
@@ -22,27 +22,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Deep link UTM capture** (`@sunglasses/react-native`): three new exports for React Native attribution:
+- **Deep link UTM capture** (`@drakkar.software/sunglasses-react-native`): three new exports for React Native attribution:
   - `captureDeepLinkUtmParams(client, url)` — low-level utility that extracts `utm_*` params from any deep link URL (HTTPS universal links and custom scheme links) and registers them as super properties; works with Hermes and JavaScriptCore
   - `useLinkingUtmCapture(client)` — hook backed by React Native's `Linking` API; handles both cold-start attribution (`getInitialURL`) and re-attribution when a new deep link arrives while the app is open (`addEventListener('url', ...)`)
   - `useExpoRouterUtmCapture(client)` — hook backed by Expo Router's `useGlobalSearchParams()`; works from the root `_layout.tsx` and re-captures whenever the URL params change (new campaign links)
 
 ### Fixed
 
-- **`captureDeepLinkUtmParams`** (`@sunglasses/react-native`): strip `#` fragment before passing query string to `URLSearchParams` — without this, `utm_campaign=sale#hero` was stored as `"sale#hero"` instead of `"sale"`
-- **`useExpoRouterUtmCapture`** (`@sunglasses/react-native`): import `UTM_PARAMS` from `captureDeepLinkUtmParams` instead of re-declaring — eliminates silent divergence risk if params are ever updated in one place but not the other
-- **`useExpoRouterUtmCapture`** (`@sunglasses/react-native`): removed `eslint-disable-next-line react-hooks/rules-of-hooks` comment — the `react-hooks` ESLint plugin is not installed in this package; the comment caused `pnpm lint` to exit 1 in CI
+- **`captureDeepLinkUtmParams`** (`@drakkar.software/sunglasses-react-native`): strip `#` fragment before passing query string to `URLSearchParams` — without this, `utm_campaign=sale#hero` was stored as `"sale#hero"` instead of `"sale"`
+- **`useExpoRouterUtmCapture`** (`@drakkar.software/sunglasses-react-native`): import `UTM_PARAMS` from `captureDeepLinkUtmParams` instead of re-declaring — eliminates silent divergence risk if params are ever updated in one place but not the other
+- **`useExpoRouterUtmCapture`** (`@drakkar.software/sunglasses-react-native`): removed `eslint-disable-next-line react-hooks/rules-of-hooks` comment — the `react-hooks` ESLint plugin is not installed in this package; the comment caused `pnpm lint` to exit 1 in CI
 
 ## [0.2.0] — 2026-04-11
 
 ### Added
 
-- **Device / browser context auto-enrichment** (`@sunglasses/core`): `buildContext()` now automatically populates `context.device` (type + OS detected from `userAgent`), `context.screen` (width × height), and `context.locale` (`navigator.language`) on web platform — fields that existed in the type but were always empty in emitted events
-- **UTM / attribution capture** (`@sunglasses/react`): new `captureUtmParams(client)` utility reads `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term` from the current URL's search params plus `$referrer` / `$referring_domain` from `document.referrer`, and registers them as super properties via `client.register()`
-- **Screen URL metadata** (`@sunglasses/react`): `useScreenTracking` now automatically attaches `$url` (full URL), `$path` (pathname), `$title` (document title), and `$referrer` (previous path for SPA navigation; `document.referrer` on initial load) to every screen event
-- **`client.deleteUserData()`** (`@sunglasses/core`): GDPR Article 17 right to erasure — clears event queue, traits, session, event counts, local archive; resets identity (new `anonymousId`); calls `adapter.reset()` on all adapters; optionally resets consent to `'unknown'` via `{ resetConsent: true }`
-- **`consentExpiryMs`** config option (`@sunglasses/core`): time-based consent expiry — if stored consent is older than the configured threshold it is automatically reset to `'unknown'` during SDK initialization, prompting the user to re-consent; complements `consentPolicyVersion` (version-based reset)
-- **`CaptureOptions`** (`@sunglasses/core`): `capture(eventName, properties?, options?)` now accepts an optional third argument with `{ timestamp?: string; messageId?: string }` — useful for back-dating offline events or injecting server-side deduplication IDs
+- **Device / browser context auto-enrichment** (`@drakkar.software/sunglasses-core`): `buildContext()` now automatically populates `context.device` (type + OS detected from `userAgent`), `context.screen` (width × height), and `context.locale` (`navigator.language`) on web platform — fields that existed in the type but were always empty in emitted events
+- **UTM / attribution capture** (`@drakkar.software/sunglasses-react`): new `captureUtmParams(client)` utility reads `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term` from the current URL's search params plus `$referrer` / `$referring_domain` from `document.referrer`, and registers them as super properties via `client.register()`
+- **Screen URL metadata** (`@drakkar.software/sunglasses-react`): `useScreenTracking` now automatically attaches `$url` (full URL), `$path` (pathname), `$title` (document title), and `$referrer` (previous path for SPA navigation; `document.referrer` on initial load) to every screen event
+- **`client.deleteUserData()`** (`@drakkar.software/sunglasses-core`): GDPR Article 17 right to erasure — clears event queue, traits, session, event counts, local archive; resets identity (new `anonymousId`); calls `adapter.reset()` on all adapters; optionally resets consent to `'unknown'` via `{ resetConsent: true }`
+- **`consentExpiryMs`** config option (`@drakkar.software/sunglasses-core`): time-based consent expiry — if stored consent is older than the configured threshold it is automatically reset to `'unknown'` during SDK initialization, prompting the user to re-consent; complements `consentPolicyVersion` (version-based reset)
+- **`CaptureOptions`** (`@drakkar.software/sunglasses-core`): `capture(eventName, properties?, options?)` now accepts an optional third argument with `{ timestamp?: string; messageId?: string }` — useful for back-dating offline events or injecting server-side deduplication IDs
 
 ### Fixed
 
@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Session tracking**: `enableSessionTracking` config + `SessionManager` subsystem; session IDs (random UUIDs) are attached to every event's `context.sessionId`; sessions expire after configurable idle timeout (default 30 min); synthetic `$session_start` event emitted at session boundary
 - **Persistent user traits**: `TraitManager` subsystem stores traits set via `identify()` and forwards them on all subsequent events in `context.traits`; sensitive keys (email, phone, etc.) are stripped before storage; traits survive restarts and are cleared on `reset()`
 - **Type-safe event catalog**: `EventMap` type + `ISunglassesTypedClient<T>` interface + `asTyped<T>(client)` zero-cost cast for compile-time event name and property checking
-- **`@sunglasses/adapter-console`**: new package that pretty-prints events to the console during development; supports `verbose`, `prefix`, and `onlyFor` options
+- **`@drakkar.software/sunglasses-adapter-console`**: new package that pretty-prints events to the console during development; supports `verbose`, `prefix`, and `onlyFor` options
 - **Consent versioning**: `consentPolicyVersion` config option; if the stored policy version differs, consent resets to `'unknown'`; audit trail (`ConsentHistoryEntry[]`) stored in `ConsentState`, accessible via `client.getConsentHistory()`
 - **Data portability** (`client.exportUserData()`): GDPR Article 20 — exports anonymousId, distinctId, consentStatus, consentHistory, traits, queuedEvents, archivedEvents, and eventCountSummary as a `UserDataExport` object; no network calls
 - **Local event archive** (`enableLocalArchive`): permanent append-only local log of all processed events; survives queue flushes; accessible in `exportUserData().archivedEvents`; prunable via `client.clearLocalArchive(config?)`
@@ -64,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **FrequencyMiddleware**: optional middleware that reads event counts from `EventCounter` and attaches `$count_daily`, `$count_monthly`, etc. to event properties
 - **SamplingMiddleware**: optional middleware that drops a configurable fraction of `capture` events to reduce analytics volume; supports per-event and consistent-per-identity sampling modes
 - **Cleanup after flush**: `cleanupAfterFlush` config in `SunglassesConfig` and `IAnalyticsAdapter.cleanupAfterFlush()` hook; `StarfishAnalyticsAdapter` implements `pruneDocument()` to remove events older than `maxAgeMs` or beyond `maxEventsPerIdentity`
-- **`pruneDocument()`** function in `@sunglasses/adapter-starfish` for age- and count-based event document pruning
+- **`pruneDocument()`** function in `@drakkar.software/sunglasses-adapter-starfish` for age- and count-based event document pruning
 - `client.getQueuedEventCount()` to inspect the current in-memory + persisted queue length
 - `client.eventCounter` accessor for direct access to the `EventCounter` instance
 
@@ -82,14 +82,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extended `PiiSanitizer` tests to cover nested object/array traversal
 
 - Initial monorepo scaffold with Turborepo + pnpm workspaces
-- `@sunglasses/core` — platform-agnostic event engine with consent management, identity management, PII sanitization, event queue, and middleware pipeline
-- `@sunglasses/react` — React web provider (`SunglassesProvider`), `useSunglasses` hook, and History API screen tracking
-- `@sunglasses/react-native` — React Native / Expo provider, `useSunglasses` hook, Expo Router screen tracking (`useExpoRouterScreenTracking`), and React Navigation screen tracking (`useNavigationScreenTracking`)
-- `@sunglasses/storage-localstorage` — localStorage persistence adapter for web
-- `@sunglasses/storage-async-storage` — AsyncStorage persistence adapter for React Native
-- `@sunglasses/storage-http` — Batched HTTP push output adapter with exponential backoff retry
-- `@sunglasses/adapter-starfish` — Drakkar-Software/Starfish document-sync output adapter with optimistic locking conflict resolution
-- `@sunglasses/tsconfig` — Shared TypeScript configurations (base, react, react-native)
+- `@drakkar.software/sunglasses-core` — platform-agnostic event engine with consent management, identity management, PII sanitization, event queue, and middleware pipeline
+- `@drakkar.software/sunglasses-react` — React web provider (`SunglassesProvider`), `useSunglasses` hook, and History API screen tracking
+- `@drakkar.software/sunglasses-react-native` — React Native / Expo provider, `useSunglasses` hook, Expo Router screen tracking (`useExpoRouterScreenTracking`), and React Navigation screen tracking (`useNavigationScreenTracking`)
+- `@drakkar.software/sunglasses-storage-localstorage` — localStorage persistence adapter for web
+- `@drakkar.software/sunglasses-storage-async-storage` — AsyncStorage persistence adapter for React Native
+- `@drakkar.software/sunglasses-storage-http` — Batched HTTP push output adapter with exponential backoff retry
+- `@drakkar.software/sunglasses-adapter-starfish` — Drakkar-Software/Starfish document-sync output adapter with optimistic locking conflict resolution
+- `@drakkar.software/sunglasses-tsconfig` — Shared TypeScript configurations (base, react, react-native)
 - `apps/example-web` — Vite + React demo application
 - `apps/example-rn` — Expo Router demo application
 - Privacy-first defaults: opt-out by default, built-in PII sanitization (email, phone, IPv4, credit card), anonymous UUID identity

@@ -26,7 +26,7 @@ import { createLogger } from './utils/logger.js';
 import { nowISO } from './utils/timestamp.js';
 import { generateUUID } from './utils/uuid.js';
 
-const LIBRARY_NAME = '@sunglasses/core';
+const LIBRARY_NAME = '@drakkar.software/sunglasses-core';
 const LIBRARY_VERSION = '0.2.0';
 
 const DEFAULT_FLUSH_INTERVAL = 30_000;

@@ -1,4 +1,4 @@
-import type { CleanupConfig, SunglassesEvent } from '@sunglasses/core';
+import type { CleanupConfig, SunglassesEvent } from '@drakkar.software/sunglasses-core';
 
 /**
  * The document structure stored at the Starfish path.

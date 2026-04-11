@@ -1,4 +1,4 @@
-import type { IAnalyticsAdapter, HttpAdapterConfig, SunglassesEvent } from '@sunglasses/core';
+import type { IAnalyticsAdapter, HttpAdapterConfig, SunglassesEvent } from '@drakkar.software/sunglasses-core';
 import { scheduleRetry } from './RetryQueue.js';
 
 const DEFAULT_MAX_RETRIES = 3;

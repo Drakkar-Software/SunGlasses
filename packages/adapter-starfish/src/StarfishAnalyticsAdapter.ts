@@ -4,7 +4,7 @@ import type {
   IStorageAdapter,
   StarfishAdapterConfig,
   SunglassesEvent,
-} from '@sunglasses/core';
+} from '@drakkar.software/sunglasses-core';
 import {
   createEmptyDocument,
   mergeEvents,

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { ISunglassesClient, ScreenTrackingOptions } from '@sunglasses/core';
+import type { ISunglassesClient, ScreenTrackingOptions } from '@drakkar.software/sunglasses-core';
 
 /**
  * Expo Router screen tracking hook.
@@ -12,7 +12,7 @@ import type { ISunglassesClient, ScreenTrackingOptions } from '@sunglasses/core'
  * @example
  * ```tsx
  * // app/_layout.tsx
- * import { useExpoRouterScreenTracking } from '@sunglasses/react-native';
+ * import { useExpoRouterScreenTracking } from '@drakkar.software/sunglasses-react-native';
  *
  * export default function RootLayout() {
  *   const client = useSunglasses();

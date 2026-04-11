@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { ISunglassesClient } from '@sunglasses/core';
+import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 
 export const SunglassesContext = createContext<ISunglassesClient | null>(null);
 

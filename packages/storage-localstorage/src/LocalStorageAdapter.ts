@@ -1,4 +1,4 @@
-import type { IStorageAdapter } from '@sunglasses/core';
+import type { IStorageAdapter } from '@drakkar.software/sunglasses-core';
 
 /**
  * IStorageAdapter implementation using the browser's localStorage API.

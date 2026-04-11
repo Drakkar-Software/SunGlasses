@@ -11,17 +11,17 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@sunglasses/core": "workspace:*",
-    "@sunglasses/react": "workspace:*",
-    "@sunglasses/storage-http": "workspace:*",
-    "@sunglasses/storage-localstorage": "workspace:*",
-    "@sunglasses/adapter-starfish": "workspace:*",
-    "@sunglasses/adapter-console": "workspace:*",
+    "@drakkar.software/sunglasses-core": "workspace:*",
+    "@drakkar.software/sunglasses-react": "workspace:*",
+    "@drakkar.software/sunglasses-storage-http": "workspace:*",
+    "@drakkar.software/sunglasses-storage-localstorage": "workspace:*",
+    "@drakkar.software/sunglasses-adapter-starfish": "workspace:*",
+    "@drakkar.software/sunglasses-adapter-console": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@sunglasses/tsconfig": "workspace:*",
+    "@drakkar.software/sunglasses-tsconfig": "workspace:*",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

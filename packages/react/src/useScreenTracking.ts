@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { ISunglassesClient, ScreenTrackingOptions } from '@sunglasses/core';
+import type { ISunglassesClient, ScreenTrackingOptions } from '@drakkar.software/sunglasses-core';
 
 // Module-level guard: track whether history methods are currently patched.
 // Prevents stacking multiple patches if the hook is accidentally mounted more

@@ -1,4 +1,4 @@
-import type { IAnalyticsAdapter, SunglassesEvent } from '@sunglasses/core';
+import type { IAnalyticsAdapter, SunglassesEvent } from '@drakkar.software/sunglasses-core';
 
 export interface ConsoleAdapterOptions {
   /**

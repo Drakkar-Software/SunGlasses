@@ -1,5 +1,5 @@
 {
-  "name": "@sunglasses/error-capture",
+  "name": "@drakkar.software/sunglasses-error-capture",
   "version": "0.1.0",
   "description": "Sentry bridge and React error boundary for SunGlasses — captures errors as analytics events",
   "main": "./dist/index.js",
@@ -24,7 +24,7 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
-    "@sunglasses/core": "workspace:*"
+    "@drakkar.software/sunglasses-core": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=17"
@@ -35,7 +35,7 @@
     }
   },
   "devDependencies": {
-    "@sunglasses/tsconfig": "workspace:*",
+    "@drakkar.software/sunglasses-tsconfig": "workspace:*",
     "@types/react": "^18.3.12",
     "happy-dom": "^15.11.7",
     "react": "^18.3.1",

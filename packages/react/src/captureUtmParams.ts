@@ -1,4 +1,4 @@
-import type { ISunglassesClient } from '@sunglasses/core';
+import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 
 const UTM_PARAMS = [
   'utm_source',

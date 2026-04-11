@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ISunglassesClient } from '@sunglasses/core';
+import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 import { createSentryBeforeSend } from '../createSentryBeforeSend.js';
 
 // ---------------------------------------------------------------------------

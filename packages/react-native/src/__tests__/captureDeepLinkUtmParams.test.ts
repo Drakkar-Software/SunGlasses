@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ISunglassesClient } from '@sunglasses/core';
+import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 import { captureDeepLinkUtmParams } from '../captureDeepLinkUtmParams.js';
 
 function makeClient(): Pick<ISunglassesClient, 'register'> {

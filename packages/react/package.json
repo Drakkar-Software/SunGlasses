@@ -1,5 +1,5 @@
 {
-  "name": "@sunglasses/react",
+  "name": "@drakkar.software/sunglasses-react",
   "version": "0.2.0",
   "description": "React (web) provider and hooks for SunGlasses event tracking",
   "main": "./dist/index.js",
@@ -24,13 +24,13 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
-    "@sunglasses/core": "workspace:*"
+    "@drakkar.software/sunglasses-core": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=18.0.0"
   },
   "devDependencies": {
-    "@sunglasses/tsconfig": "workspace:*",
+    "@drakkar.software/sunglasses-tsconfig": "workspace:*",
     "@types/react": "^18.3.12",
     "happy-dom": "^15.11.7",
     "react": "^18.3.1",

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HttpStorageAdapter } from '../HttpStorageAdapter.js';
-import type { SunglassesEvent } from '@sunglasses/core';
+import type { SunglassesEvent } from '@drakkar.software/sunglasses-core';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -13,7 +13,7 @@ function makeEvent(id = 'msg-1'): SunglassesEvent {
     timestamp: '2024-01-01T00:00:00.000Z',
     messageId: id,
     properties: { foo: 'bar' },
-    context: { library: { name: '@sunglasses/core', version: '0.1.0' }, platform: 'web' },
+    context: { library: { name: '@drakkar.software/sunglasses-core', version: '0.1.0' }, platform: 'web' },
   };
 }
 

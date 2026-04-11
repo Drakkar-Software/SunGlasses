@@ -14,5 +14,5 @@ export type {
   SunglassesEvent,
   ConsentStatus,
   ScreenTrackingOptions,
-} from '@sunglasses/core';
-export { SunglassesCore } from '@sunglasses/core';
+} from '@drakkar.software/sunglasses-core';
+export { SunglassesCore } from '@drakkar.software/sunglasses-core';

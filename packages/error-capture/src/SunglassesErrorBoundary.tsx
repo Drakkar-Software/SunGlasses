@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ISunglassesClient } from '@sunglasses/core';
+import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 import type { SentryBridgeConfig } from './createSentryBeforeSend.js';
 
 // ---------------------------------------------------------------------------

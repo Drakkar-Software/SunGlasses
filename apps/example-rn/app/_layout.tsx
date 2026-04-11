@@ -1,11 +1,11 @@
 import 'react-native-get-random-values'; // Must be imported before any crypto usage
 import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
-import { SunglassesCore } from '@sunglasses/core';
-import { SunglassesProvider, useSunglasses, useExpoRouterScreenTracking } from '@sunglasses/react-native';
-import { AsyncStorageAdapter } from '@sunglasses/storage-async-storage';
-import { ConsoleAdapter } from '@sunglasses/adapter-console';
-import type { ISunglassesClient } from '@sunglasses/core';
+import { SunglassesCore } from '@drakkar.software/sunglasses-core';
+import { SunglassesProvider, useSunglasses, useExpoRouterScreenTracking } from '@drakkar.software/sunglasses-react-native';
+import { AsyncStorageAdapter } from '@drakkar.software/sunglasses-storage-async-storage';
+import { ConsoleAdapter } from '@drakkar.software/sunglasses-adapter-console';
+import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 
 /**
  * Inner layout component — runs inside the SunglassesProvider context,

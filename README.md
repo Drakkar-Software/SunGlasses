@@ -21,28 +21,28 @@ Track screen views, button taps, and custom events — with built-in PII sanitiz
 
 | Package | Platform | Description |
 |---------|----------|-------------|
-| `@sunglasses/core` | Any | Platform-agnostic event engine + all interfaces |
-| `@sunglasses/react` | Web | React context provider + hooks |
-| `@sunglasses/react-native` | RN / Expo | React Native provider + screen tracking hooks |
-| `@sunglasses/storage-localstorage` | Web | localStorage persistence adapter |
-| `@sunglasses/storage-async-storage` | React Native | AsyncStorage persistence adapter |
-| `@sunglasses/storage-http` | Any | Batched HTTP push output adapter |
-| `@sunglasses/adapter-starfish` | Any | Drakkar-Software/Starfish document-sync adapter |
-| `@sunglasses/adapter-console` | Any | Development adapter — pretty-prints events to console |
-| `@sunglasses/error-capture` | Web / RN | Sentry bridge + React error boundary for `$error` events |
+| `@drakkar.software/sunglasses-core` | Any | Platform-agnostic event engine + all interfaces |
+| `@drakkar.software/sunglasses-react` | Web | React context provider + hooks |
+| `@drakkar.software/sunglasses-react-native` | RN / Expo | React Native provider + screen tracking hooks |
+| `@drakkar.software/sunglasses-storage-localstorage` | Web | localStorage persistence adapter |
+| `@drakkar.software/sunglasses-storage-async-storage` | React Native | AsyncStorage persistence adapter |
+| `@drakkar.software/sunglasses-storage-http` | Any | Batched HTTP push output adapter |
+| `@drakkar.software/sunglasses-adapter-starfish` | Any | Drakkar-Software/Starfish document-sync adapter |
+| `@drakkar.software/sunglasses-adapter-console` | Any | Development adapter — pretty-prints events to console |
+| `@drakkar.software/sunglasses-error-capture` | Web / RN | Sentry bridge + React error boundary for `$error` events |
 
 ## Quickstart — Web (React + Vite)
 
 ```bash
-pnpm add @sunglasses/core @sunglasses/react @sunglasses/storage-localstorage
+pnpm add @drakkar.software/sunglasses-core @drakkar.software/sunglasses-react @drakkar.software/sunglasses-storage-localstorage
 ```
 
 ```tsx
 // main.tsx
-import { SunglassesCore } from '@sunglasses/core';
-import { SunglassesProvider } from '@sunglasses/react';
-import { LocalStorageAdapter } from '@sunglasses/storage-localstorage';
-import { HttpStorageAdapter } from '@sunglasses/storage-http';
+import { SunglassesCore } from '@drakkar.software/sunglasses-core';
+import { SunglassesProvider } from '@drakkar.software/sunglasses-react';
+import { LocalStorageAdapter } from '@drakkar.software/sunglasses-storage-localstorage';
+import { HttpStorageAdapter } from '@drakkar.software/sunglasses-storage-http';
 
 const client = await SunglassesCore.create({
   storage: new LocalStorageAdapter(),
@@ -63,7 +63,7 @@ root.render(
 
 ```tsx
 // Anywhere in your app
-import { useSunglasses } from '@sunglasses/react';
+import { useSunglasses } from '@drakkar.software/sunglasses-react';
 
 function BuyButton() {
   const client = useSunglasses();
@@ -79,16 +79,16 @@ function BuyButton() {
 ## Quickstart — React Native / Expo
 
 ```bash
-pnpm add @sunglasses/core @sunglasses/react-native @sunglasses/storage-async-storage
+pnpm add @drakkar.software/sunglasses-core @drakkar.software/sunglasses-react-native @drakkar.software/sunglasses-storage-async-storage
 pnpm add @react-native-async-storage/async-storage react-native-get-random-values
 ```
 
 ```tsx
 // app/_layout.tsx (Expo Router)
 import 'react-native-get-random-values'; // Must be first import
-import { SunglassesCore } from '@sunglasses/core';
-import { SunglassesProvider, useSunglasses, useExpoRouterScreenTracking } from '@sunglasses/react-native';
-import { AsyncStorageAdapter } from '@sunglasses/storage-async-storage';
+import { SunglassesCore } from '@drakkar.software/sunglasses-core';
+import { SunglassesProvider, useSunglasses, useExpoRouterScreenTracking } from '@drakkar.software/sunglasses-react-native';
+import { AsyncStorageAdapter } from '@drakkar.software/sunglasses-storage-async-storage';
 
 function InnerLayout() {
   const client = useSunglasses();
@@ -241,7 +241,7 @@ client.capture('order_created', { orderId: '123' }, {
 **Web** — reads `utm_*` params from `window.location.search` and `document.referrer`:
 
 ```ts
-import { captureUtmParams } from '@sunglasses/react';
+import { captureUtmParams } from '@drakkar.software/sunglasses-react';
 
 const client = await SunglassesCore.create({ ... });
 captureUtmParams(client); // call once at startup
@@ -251,7 +251,7 @@ captureUtmParams(client); // call once at startup
 `useGlobalSearchParams()`. Place in your root `_layout.tsx`:
 
 ```tsx
-import { useExpoRouterUtmCapture } from '@sunglasses/react-native';
+import { useExpoRouterUtmCapture } from '@drakkar.software/sunglasses-react-native';
 
 export default function RootLayout() {
   const client = useSunglasses();
@@ -264,7 +264,7 @@ export default function RootLayout() {
 both Expo and bare React Native:
 
 ```tsx
-import { useLinkingUtmCapture } from '@sunglasses/react-native';
+import { useLinkingUtmCapture } from '@drakkar.software/sunglasses-react-native';
 
 export default function App() {
   const client = useSunglasses();
@@ -279,7 +279,7 @@ deep link handling yourself.
 ## Custom Middleware
 
 ```ts
-import type { IMiddleware, SunglassesEvent, MiddlewareNext } from '@sunglasses/core';
+import type { IMiddleware, SunglassesEvent, MiddlewareNext } from '@drakkar.software/sunglasses-core';
 
 const myMiddleware: IMiddleware = {
   name: 'AddAppVersion',
@@ -299,7 +299,7 @@ SunglassesCore.create({ middleware: [myMiddleware], ... });
 [Starfish](https://github.com/Drakkar-Software/Starfish) is a document-sync backend developed by Drakkar-Software.
 
 ```ts
-import { StarfishAnalyticsAdapter } from '@sunglasses/adapter-starfish';
+import { StarfishAnalyticsAdapter } from '@drakkar.software/sunglasses-adapter-starfish';
 
 SunglassesCore.create({
   adapters: [
@@ -370,7 +370,7 @@ Cleanup is fire-and-forget — it never blocks the flush. Adapters that don't im
 Randomly drop a fraction of events to reduce analytics costs:
 
 ```ts
-import { SamplingMiddleware } from '@sunglasses/core';
+import { SamplingMiddleware } from '@drakkar.software/sunglasses-core';
 
 // Keep only 10% of events (drop 90%)
 const sampling = new SamplingMiddleware({ sampleRate: 0.1 });
@@ -397,7 +397,7 @@ SunglassesCore.create({ middleware: [sampling], ... });
 Implement `IAnalyticsAdapter` to send events to any destination:
 
 ```ts
-import type { IAnalyticsAdapter, SunglassesEvent, CleanupConfig } from '@sunglasses/core';
+import type { IAnalyticsAdapter, SunglassesEvent, CleanupConfig } from '@drakkar.software/sunglasses-core';
 
 class FirebaseAdapter implements IAnalyticsAdapter {
   async send(batch: SunglassesEvent[]): Promise<void> {
@@ -432,7 +432,7 @@ class FirebaseAdapter implements IAnalyticsAdapter {
 Implement `IStorageAdapter` to use any key-value store:
 
 ```ts
-import type { IStorageAdapter } from '@sunglasses/core';
+import type { IStorageAdapter } from '@drakkar.software/sunglasses-core';
 
 class SecureStorageAdapter implements IStorageAdapter {
   async read(key: string): Promise<string | null> {
@@ -447,19 +447,19 @@ class SecureStorageAdapter implements IStorageAdapter {
 }
 ```
 
-## Error Capture (`@sunglasses/error-capture`)
+## Error Capture (`@drakkar.software/sunglasses-error-capture`)
 
 Capture unhandled errors as `$error` analytics events using the Sentry bridge. All errors run through the existing PiiSanitizer middleware automatically.
 
 ```bash
-pnpm add @sunglasses/error-capture
+pnpm add @drakkar.software/sunglasses-error-capture
 ```
 
 ### Sentry bridge — both Sentry and SunGlasses receive errors
 
 ```ts
 import * as Sentry from '@sentry/browser'; // or @sentry/react-native
-import { createSentryBeforeSend } from '@sunglasses/error-capture';
+import { createSentryBeforeSend } from '@drakkar.software/sunglasses-error-capture';
 
 Sentry.init({
   dsn: 'https://...',
@@ -471,7 +471,7 @@ Sentry.init({
 
 ```ts
 import * as Sentry from '@sentry/browser';
-import { createSentryBeforeSend } from '@sunglasses/error-capture';
+import { createSentryBeforeSend } from '@drakkar.software/sunglasses-error-capture';
 
 // No DSN needed. Sentry attaches global error handlers and fires beforeSend,
 // but transmits nothing. Set suppressSentrySend: true to return null from beforeSend.
@@ -485,7 +485,7 @@ Sentry.init({
 Catches render-phase errors before they reach Sentry's global handler:
 
 ```tsx
-import { SunglassesErrorBoundary } from '@sunglasses/error-capture';
+import { SunglassesErrorBoundary } from '@drakkar.software/sunglasses-error-capture';
 
 <SunglassesErrorBoundary client={client} fallback={<ErrorPage />}>
   <App />
@@ -585,7 +585,7 @@ Sensitive keys (`email`, `password`, `phone`, etc.) are stripped before traits a
 Get compile-time checking of event names and property shapes — zero runtime cost:
 
 ```ts
-import { asTyped } from '@sunglasses/core';
+import { asTyped } from '@drakkar.software/sunglasses-core';
 
 type MyEvents = {
   button_clicked: { buttonId: string; screen: string };
@@ -606,7 +606,7 @@ typed.capture('unknown_event', {});                                   // ✗ TS 
 Pretty-print events to the console during development:
 
 ```ts
-import { ConsoleAdapter } from '@sunglasses/adapter-console';
+import { ConsoleAdapter } from '@drakkar.software/sunglasses-adapter-console';
 
 SunglassesCore.create({
   adapters: [
@@ -695,8 +695,8 @@ await client.clearLocalArchive();
 By default, `StarfishAnalyticsAdapter` maintains a single growing document per identity. For high-volume apps or when you want smaller, isolated push documents, enable path rotation:
 
 ```ts
-import { StarfishAnalyticsAdapter } from '@sunglasses/adapter-starfish';
-import { LocalStorageAdapter } from '@sunglasses/storage-localstorage';
+import { StarfishAnalyticsAdapter } from '@drakkar.software/sunglasses-adapter-starfish';
+import { LocalStorageAdapter } from '@drakkar.software/sunglasses-storage-localstorage';
 
 const storage = new LocalStorageAdapter();
 

@@ -1,5 +1,5 @@
 {
-  "extends": "@sunglasses/tsconfig/react.json",
+  "extends": "@drakkar.software/sunglasses-tsconfig/react.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",

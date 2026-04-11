@@ -7,28 +7,28 @@ This file provides guidance for contributors and AI-assisted development in this
 SunGlasses is a privacy-first event tracking library distributed as a TypeScript monorepo.
 
 ```
-@sunglasses/core               Platform-agnostic event engine (no React/RN deps)
-@sunglasses/react              React (web) provider + hooks
-@sunglasses/react-native       React Native / Expo provider + hooks
-@sunglasses/storage-localstorage  localStorage adapter (web)
-@sunglasses/storage-async-storage AsyncStorage adapter (React Native)
-@sunglasses/storage-http          Batched HTTP push adapter (output destination)
-@sunglasses/adapter-starfish      Starfish document-sync adapter
-@sunglasses/adapter-console       Dev-only console pretty-printer adapter
-@sunglasses/tsconfig              Shared TypeScript configs (private)
+@drakkar.software/sunglasses-core               Platform-agnostic event engine (no React/RN deps)
+@drakkar.software/sunglasses-react              React (web) provider + hooks
+@drakkar.software/sunglasses-react-native       React Native / Expo provider + hooks
+@drakkar.software/sunglasses-storage-localstorage  localStorage adapter (web)
+@drakkar.software/sunglasses-storage-async-storage AsyncStorage adapter (React Native)
+@drakkar.software/sunglasses-storage-http          Batched HTTP push adapter (output destination)
+@drakkar.software/sunglasses-adapter-starfish      Starfish document-sync adapter
+@drakkar.software/sunglasses-adapter-console       Dev-only console pretty-printer adapter
+@drakkar.software/sunglasses-tsconfig              Shared TypeScript configs (private)
 ```
 
 Package dependency graph (runtime, not devDeps):
 ```
-@sunglasses/core  (no deps)
+@drakkar.software/sunglasses-core  (no deps)
         ↑
-├── @sunglasses/react
-├── @sunglasses/react-native
-├── @sunglasses/storage-localstorage
-├── @sunglasses/storage-async-storage
-├── @sunglasses/storage-http
-├── @sunglasses/adapter-starfish
-└── @sunglasses/adapter-console
+├── @drakkar.software/sunglasses-react
+├── @drakkar.software/sunglasses-react-native
+├── @drakkar.software/sunglasses-storage-localstorage
+├── @drakkar.software/sunglasses-storage-async-storage
+├── @drakkar.software/sunglasses-storage-http
+├── @drakkar.software/sunglasses-adapter-starfish
+└── @drakkar.software/sunglasses-adapter-console
 ```
 
 ## Prerequisites
@@ -62,21 +62,21 @@ pnpm lint
 pnpm clean
 
 # Run a command in a specific package
-pnpm --filter @sunglasses/core build
+pnpm --filter @drakkar.software/sunglasses-core build
 pnpm --filter example-web dev
 
 # Add a dependency to a specific package
-pnpm --filter @sunglasses/core add some-package
-pnpm --filter @sunglasses/core add -D some-dev-package
+pnpm --filter @drakkar.software/sunglasses-core add some-package
+pnpm --filter @drakkar.software/sunglasses-core add -D some-dev-package
 ```
 
 ## Adding a New Package
 
 1. Create the directory: `mkdir packages/my-package`
 2. Copy the `packages/core/package.json` pattern (update `name`, `description`, deps)
-3. Create `packages/my-package/tsconfig.json` extending `@sunglasses/tsconfig/base.json`
+3. Create `packages/my-package/tsconfig.json` extending `@drakkar.software/sunglasses-tsconfig/base.json`
 4. Create `packages/my-package/src/index.ts`
-5. Add `"@sunglasses/my-package": "workspace:*"` to consumers that need it
+5. Add `"@drakkar.software/sunglasses-my-package": "workspace:*"` to consumers that need it
 6. Run `pnpm install` to link the workspace
 
 ## Making a Release
@@ -212,7 +212,7 @@ class MyStorage implements IStorageAdapter {
 ## Middleware Authoring Guide
 
 ```ts
-import type { IMiddleware, MiddlewareNext, SunglassesEvent } from '@sunglasses/core';
+import type { IMiddleware, MiddlewareNext, SunglassesEvent } from '@drakkar.software/sunglasses-core';
 
 class MyMiddleware implements IMiddleware {
   readonly name = 'MyMiddleware'; // must be unique

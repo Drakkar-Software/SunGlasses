@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { ISunglassesClient } from '@sunglasses/core';
+import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 import { useGlobalSearchParams } from './expoRouterCompat.js';
 import { UTM_PARAMS } from './captureDeepLinkUtmParams.js';
 
@@ -20,7 +20,7 @@ import { UTM_PARAMS } from './captureDeepLinkUtmParams.js';
  * @example
  * ```tsx
  * // app/_layout.tsx
- * import { useExpoRouterUtmCapture } from '@sunglasses/react-native';
+ * import { useExpoRouterUtmCapture } from '@drakkar.software/sunglasses-react-native';
  *
  * export default function RootLayout() {
  *   const client = useSunglasses();

@@ -8,7 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useSunglasses } from '@sunglasses/react-native';
+import { useSunglasses } from '@drakkar.software/sunglasses-react-native';
 
 export default function HomeScreen(): React.ReactElement {
   const client = useSunglasses();

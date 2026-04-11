@@ -1,5 +1,5 @@
 {
-  "name": "@sunglasses/storage-async-storage",
+  "name": "@drakkar.software/sunglasses-storage-async-storage",
   "version": "0.1.0",
   "description": "AsyncStorage adapter for SunGlasses (React Native / Expo)",
   "main": "./dist/index.js",
@@ -24,13 +24,13 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
-    "@sunglasses/core": "workspace:*"
+    "@drakkar.software/sunglasses-core": "workspace:*"
   },
   "peerDependencies": {
     "@react-native-async-storage/async-storage": ">=1.x"
   },
   "devDependencies": {
-    "@sunglasses/tsconfig": "workspace:*",
+    "@drakkar.software/sunglasses-tsconfig": "workspace:*",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

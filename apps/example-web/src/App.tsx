@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useSunglasses } from '@sunglasses/react';
+import { useSunglasses } from '@drakkar.software/sunglasses-react';
 
 export function App(): React.ReactElement {
   const client = useSunglasses();
