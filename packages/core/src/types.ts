@@ -84,7 +84,7 @@ export interface IMiddleware {
 // Event types
 // ---------------------------------------------------------------------------
 
-export type EventType = 'capture' | 'screen' | 'identify' | 'alias';
+export type EventType = 'capture' | 'screen' | 'identify' | 'alias' | 'group';
 
 export interface EventContext {
   library: { name: string; version: string };
@@ -97,6 +97,8 @@ export interface EventContext {
   sessionId?: string;
   /** Persisted user traits set via identify(). Forwarded to backends for segmentation. */
   traits?: Record<string, unknown>;
+  /** Group identity set via group(). Enables organization-level segmentation. */
+  group?: { id: string };
 }
 
 /**
@@ -182,6 +184,20 @@ export interface SunglassesConfig {
    * The raw ID is never stored in the event payload.
    */
   anonymizeUserId?: boolean;
+  /**
+   * When true (default), the SDK checks `navigator.globalPrivacyControl` (GPC)
+   * and `navigator.doNotTrack` (DNT) during initialization. If either signal is
+   * detected and the user has not yet made an explicit in-app consent choice,
+   * the SDK automatically calls `optOut()`.
+   *
+   * GPC is legally binding under CPRA (California). DNT is advisory.
+   *
+   * Set to `false` to disable this behavior — for example, if your consent UI
+   * already handles opt-out separately.
+   *
+   * Only applies on the `'web'` platform. No-op on `'react-native'`.
+   */
+  respectDoNotTrack?: boolean;
 
   // ── Queue / Flush ─────────────────────────────────────────────────────────
   /** Auto-flush interval in ms. Default: 30_000. */
@@ -273,8 +289,34 @@ export interface ISunglassesClient {
   identify(userId: string, traits?: Record<string, unknown>): void;
   /** Create an alias between two identities (e.g. pre/post login merge). */
   alias(newId: string, existingId: string): void;
+  /**
+   * Associate the current user with a group (e.g. organisation, workspace, team).
+   * Emits a `group` event and attaches the group ID to all subsequent events via
+   * `context.group`. Silently dropped when opted-out or disabled.
+   *
+   * Group identity is in-memory only and must be re-set after `reset()` or restart.
+   */
+  group(groupId: string, groupTraits?: Record<string, unknown>): void;
   /** Clear identity and generate a fresh anonymous ID. */
   reset(): Promise<void>;
+
+  // ── Super properties ──────────────────────────────────────────────────────
+  /**
+   * Register properties that are automatically merged into every subsequent event.
+   * Per-event properties passed to `capture()` override registered properties with
+   * the same key. Use for non-PII session/environment metadata such as
+   * `{ environment: 'production', experiment_group: 'A' }`.
+   *
+   * Registered properties are in-memory only and must be re-registered on restart.
+   */
+  register(properties: Record<string, unknown>): void;
+  /**
+   * Remove specific keys from the registered super properties.
+   * If called with no arguments, all registered properties are cleared.
+   */
+  unregister(...keys: string[]): void;
+  /** Returns a snapshot of all currently registered super properties. */
+  getRegisteredProperties(): Record<string, unknown>;
 
   // ── Consent ───────────────────────────────────────────────────────────────
   optIn(): Promise<void>;

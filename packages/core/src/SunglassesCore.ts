@@ -71,6 +71,10 @@ export class SunglassesCore implements ISunglassesClient {
   private isShutdown = false;
   /** Guard against concurrent flushes — prevents double-send. */
   private flushInFlight = false;
+  /** In-memory super properties merged into every event's properties. */
+  private readonly superProperties = new Map<string, unknown>();
+  /** In-memory group ID attached to every event's context after group() is called. */
+  private groupId: string | null = null;
 
   private constructor(
     config: SunglassesConfig,
@@ -181,6 +185,28 @@ export class SunglassesCore implements ISunglassesClient {
       await localArchive.initialize();
     }
 
+    // GPC / DNT auto-opt-out (web only, only when consent is still 'unknown')
+    // GPC (navigator.globalPrivacyControl) is legally binding under CPRA.
+    // DNT (navigator.doNotTrack) is advisory. Neither overrides an explicit user choice.
+    //
+    // Access navigator through globalThis to stay within lib: ["ES2020"] without
+    // requiring DOM lib types in the core package.
+    if (
+      config.respectDoNotTrack !== false &&
+      (config.platform ?? 'web') === 'web' &&
+      consent.status === 'unknown' &&
+      'navigator' in globalThis
+    ) {
+      type NavHints = { doNotTrack?: string; globalPrivacyControl?: boolean };
+      const nav = (globalThis as Record<string, unknown>)['navigator'] as NavHints;
+      const hasGpc = nav.globalPrivacyControl === true;
+      const hasDnt = nav.doNotTrack === '1';
+      if (hasGpc || hasDnt) {
+        await consent.optOut();
+        logger.debug('SunglassesCore: auto opted-out via privacy signal', { gpc: hasGpc, dnt: hasDnt });
+      }
+    }
+
     // Start auto-flush timer
     if (!(config.disabled ?? false)) {
       instance.startFlushTimer();
@@ -241,10 +267,42 @@ export class SunglassesCore implements ISunglassesClient {
     });
   }
 
+  group(groupId: string, groupTraits?: Record<string, unknown>): void {
+    if (!this.canCapture()) return;
+    this.groupId = groupId;
+    this.enqueueEvent('group', '$group', {
+      ...groupTraits,
+      $group_id: groupId,
+    });
+  }
+
+  // ── Super properties ──────────────────────────────────────────────────────
+
+  register(properties: Record<string, unknown>): void {
+    for (const [key, value] of Object.entries(properties)) {
+      this.superProperties.set(key, value);
+    }
+  }
+
+  unregister(...keys: string[]): void {
+    if (keys.length === 0) {
+      this.superProperties.clear();
+      return;
+    }
+    for (const key of keys) {
+      this.superProperties.delete(key);
+    }
+  }
+
+  getRegisteredProperties(): Record<string, unknown> {
+    return Object.fromEntries(this.superProperties);
+  }
+
   async reset(): Promise<void> {
     await this.identity.reset();
     await this.queue.clear();
     await this.traitManager.clearTraits();
+    this.groupId = null;
     if (this.sessionManager) {
       await this.sessionManager.end();
     }
@@ -409,6 +467,13 @@ export class SunglassesCore implements ISunglassesClient {
       isNewSession = before !== session.sessionId;
     }
 
+    // Merge super properties: registered props are the base; per-call props override.
+    // This happens before the middleware pipeline so PiiSanitizer can catch anything.
+    const mergedProperties: Record<string, unknown> = {
+      ...Object.fromEntries(this.superProperties),
+      ...(properties ?? {}),
+    };
+
     const event: SunglassesEvent = {
       type,
       event: eventName,
@@ -416,7 +481,7 @@ export class SunglassesCore implements ISunglassesClient {
       anonymousId: identityState.anonymousId,
       timestamp: nowISO(),
       messageId: generateUUID(),
-      properties: properties ?? {},
+      properties: mergedProperties,
       context: this.buildContext(sessionId),
     };
 
@@ -496,6 +561,10 @@ export class SunglassesCore implements ISunglassesClient {
     const traits = this.traitManager.getTraits();
     if (Object.keys(traits).length > 0) {
       ctx.traits = traits;
+    }
+
+    if (this.groupId !== null) {
+      ctx.group = { id: this.groupId };
     }
 
     return ctx;

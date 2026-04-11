@@ -2,6 +2,8 @@ export { SunglassesProvider } from './SunglassesProvider.js';
 export type { SunglassesProviderProps } from './SunglassesProvider.js';
 export { useSunglasses } from './context.js';
 export { useScreenTracking } from './useScreenTracking.js';
+export { useCapture } from './useCapture.js';
+export { useConsentStatus } from './useConsentStatus.js';
 
 // Re-export core types for convenience
 export type {

@@ -42,6 +42,19 @@ export function SunglassesProvider({
     };
   }, [client]);
 
+  // Flush queued events when the page is hidden (tab switch, browser close).
+  // This is more reliable than relying on unmount, which rarely fires in SPAs.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === 'hidden') {
+        client.flush().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [client]);
+
   // Optional automatic screen tracking
   useScreenTracking(client, screenTracking ?? { useHistoryApi: false });
 

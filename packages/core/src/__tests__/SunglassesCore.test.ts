@@ -240,4 +240,214 @@ describe('SunglassesCore', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(cleanupFn).toHaveBeenCalled();
   });
+
+  // ── GPC / DNT auto-opt-out ───────────────────────────────────────────────
+
+  it('auto opts-out when navigator.globalPrivacyControl is true and consent is unknown', async () => {
+    vi.stubGlobal('navigator', { globalPrivacyControl: true, doNotTrack: null });
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: false, // stays 'unknown' — not opted-in explicitly
+      platform: 'web',
+    });
+    expect(client.hasOptedOut()).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('auto opts-out when navigator.doNotTrack is "1" and consent is unknown', async () => {
+    vi.stubGlobal('navigator', { doNotTrack: '1' });
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: false,
+      platform: 'web',
+    });
+    expect(client.hasOptedOut()).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('does NOT auto opt-out when respectDoNotTrack is false', async () => {
+    vi.stubGlobal('navigator', { globalPrivacyControl: true, doNotTrack: '1' });
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: true,
+      platform: 'web',
+      respectDoNotTrack: false,
+    });
+    expect(client.hasOptedIn()).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('does NOT override explicit opt-in even when GPC is set', async () => {
+    vi.stubGlobal('navigator', { globalPrivacyControl: true });
+    // Simulate a stored opt-in by using defaultOptIn: true
+    // The user has already made an explicit choice — GPC should not override
+    const storage = makeStorage();
+    // Pre-populate consent as 'opted-in' so status !== 'unknown'
+    const client1 = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage,
+      defaultOptIn: true,
+      platform: 'web',
+    });
+    await client1.optIn(); // explicit opt-in written to storage
+
+    // Second init: GPC is set but consent is already 'opted-in' in storage
+    const client2 = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage,
+      defaultOptIn: true,
+      platform: 'web',
+    });
+    expect(client2.hasOptedIn()).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  // ── register() / unregister() — super properties ─────────────────────────
+
+  it('registered properties are merged into captured events', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.register({ environment: 'test', version: '1.0' });
+    client.capture('page_viewed');
+    await vi.advanceTimersByTimeAsync(100);
+    await client.flush();
+
+    const event = adapter.batches[0][0] as { properties: Record<string, unknown> };
+    expect(event.properties.environment).toBe('test');
+    expect(event.properties.version).toBe('1.0');
+  });
+
+  it('per-call properties override registered properties', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.register({ color: 'blue' });
+    client.capture('button_clicked', { color: 'red' });
+    await vi.advanceTimersByTimeAsync(100);
+    await client.flush();
+
+    const event = adapter.batches[0][0] as { properties: Record<string, unknown> };
+    expect(event.properties.color).toBe('red');
+  });
+
+  it('unregister() removes specific keys', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.register({ a: 1, b: 2, c: 3 });
+    client.unregister('b', 'c');
+
+    expect(client.getRegisteredProperties()).toEqual({ a: 1 });
+  });
+
+  it('unregister() with no args clears all super properties', async () => {
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.register({ a: 1, b: 2 });
+    client.unregister();
+    expect(client.getRegisteredProperties()).toEqual({});
+  });
+
+  it('getRegisteredProperties() returns a snapshot', async () => {
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.register({ x: 10 });
+    const snapshot = client.getRegisteredProperties();
+    client.register({ x: 99 }); // mutate after snapshot
+    expect(snapshot.x).toBe(10); // snapshot is unaffected
+  });
+
+  // ── group() ───────────────────────────────────────────────────────────────
+
+  it('group() enqueues a group event with the group ID', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.group('org-42', { name: 'Acme Corp' });
+    await vi.advanceTimersByTimeAsync(100);
+    await client.flush();
+
+    const event = adapter.batches[0][0] as {
+      type: string;
+      event: string;
+      properties: Record<string, unknown>;
+    };
+    expect(event.type).toBe('group');
+    expect(event.event).toBe('$group');
+    expect(event.properties.$group_id).toBe('org-42');
+    expect(event.properties.name).toBe('Acme Corp');
+  });
+
+  it('group() attaches context.group.id to subsequent events', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.group('org-42');
+    client.capture('page_viewed');
+    await vi.advanceTimersByTimeAsync(100);
+    await client.flush();
+
+    // The second event (page_viewed) should carry context.group
+    const pageViewEvent = adapter.batches[0].find(
+      (e) => (e as { event: string }).event === 'page_viewed'
+    ) as { context: { group?: { id: string } } } | undefined;
+    expect(pageViewEvent?.context.group?.id).toBe('org-42');
+  });
+
+  it('group() is cleared on reset()', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.group('org-42');
+    await client.reset();
+    await client.optIn();
+    client.capture('post_reset');
+    await vi.advanceTimersByTimeAsync(100);
+    await client.flush();
+
+    const event = adapter.batches[0].find(
+      (e) => (e as { event: string }).event === 'post_reset'
+    ) as { context: { group?: unknown } } | undefined;
+    expect(event?.context.group).toBeUndefined();
+  });
+
+  it('group() is silently dropped when opted-out', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: false,
+    });
+    client.group('org-1');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(client.getQueuedEventCount()).toBe(0);
+  });
 });

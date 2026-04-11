@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { AppState } from 'react-native';
 import type { ISunglassesClient } from '@sunglasses/core';
 import { SunglassesContext } from './context.js';
 
@@ -52,6 +53,18 @@ export function SunglassesProvider({
     return () => {
       client.shutdown().catch(() => {});
     };
+  }, [client]);
+
+  // Flush queued events when the app moves to the background.
+  // On mobile, apps can be killed at any time after entering the background,
+  // so this is the last reliable opportunity to deliver pending events.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'background') {
+        client.flush().catch(() => {});
+      }
+    });
+    return () => subscription.remove();
   }, [client]);
 
   return (
