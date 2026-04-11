@@ -1,4 +1,5 @@
 export { SunglassesProvider } from './SunglassesProvider.js';
+export { captureUtmParams } from './captureUtmParams.js';
 export type { SunglassesProviderProps } from './SunglassesProvider.js';
 export { useSunglasses } from './context.js';
 export { useScreenTracking } from './useScreenTracking.js';

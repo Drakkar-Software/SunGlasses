@@ -256,6 +256,18 @@ export interface SunglassesConfig {
    */
   consentPolicyVersion?: string;
 
+  /**
+   * If set, consent older than this many milliseconds is automatically reset to
+   * 'unknown', prompting the user to consent again. Useful for regulatory
+   * compliance that requires re-obtaining consent periodically.
+   *
+   * Example: `365 * 24 * 60 * 60 * 1000` re-asks every year.
+   *
+   * The expiry check runs on SDK initialization. It does not override an
+   * explicit in-session `optIn()` or `optOut()` call.
+   */
+  consentExpiryMs?: number;
+
   // ── Local event archive ───────────────────────────────────────────────────
   /**
    * When true, every event that passes the middleware pipeline is also written
@@ -281,8 +293,11 @@ export interface SunglassesConfig {
  * Both @sunglasses/react and @sunglasses/react-native expose this via Context.
  */
 export interface ISunglassesClient {
-  /** Track a custom event. Silently dropped when opted-out or disabled. */
-  capture(eventName: string, properties?: Record<string, unknown>): void;
+  /**
+   * Track a custom event. Silently dropped when opted-out or disabled.
+   * @param options - Optional overrides for timestamp and messageId.
+   */
+  capture(eventName: string, properties?: Record<string, unknown>, options?: CaptureOptions): void;
   /** Track a screen/page view. */
   screen(screenName: string, properties?: Record<string, unknown>): void;
   /** Link the current anonymous session to a known user. */
@@ -369,6 +384,22 @@ export interface ISunglassesClient {
    * No network calls — reads only from in-memory subsystem state.
    */
   exportUserData(): Promise<UserDataExport>;
+
+  /**
+   * Erase all locally held user data.
+   * GDPR Article 17 — right to erasure.
+   *
+   * Clears: event queue, user traits, session, event counts, local archive.
+   * Resets identity to a fresh anonymous ID (new UUID, no distinctId).
+   * Clears in-memory super properties and group identity.
+   * Calls `adapter.reset()` on all adapters.
+   *
+   * @param options.resetConsent - When true, also resets consent status to
+   *   'unknown' so the user is prompted to consent again. Defaults to false
+   *   because the consent audit trail is evidence of past user choices and
+   *   may have regulatory significance.
+   */
+  deleteUserData(options?: { resetConsent?: boolean }): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -510,6 +541,31 @@ export interface UserDataExport {
   eventCountSummary: {
     [eventName: string]: Partial<Record<EventCountPeriod, number>>;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Capture options
+// ---------------------------------------------------------------------------
+
+/**
+ * Optional overrides for a single `capture()` call.
+ * Use sparingly — the defaults (auto timestamp, auto messageId) are correct
+ * for the vast majority of use cases.
+ */
+export interface CaptureOptions {
+  /**
+   * Override the event timestamp (ISO-8601 UTC string).
+   * Useful for back-dating events captured offline or migrating historical data.
+   * Defaults to `Date.now()` at the time `capture()` is called.
+   */
+  timestamp?: string;
+  /**
+   * Override the deduplication ID (UUID v4).
+   * Useful when the event was originally generated server-side and you want
+   * to guarantee idempotent delivery even after retries.
+   * Defaults to a freshly generated UUID v4.
+   */
+  messageId?: string;
 }
 
 // ---------------------------------------------------------------------------

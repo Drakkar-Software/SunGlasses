@@ -167,6 +167,7 @@ A UUID v4 is generated on first run and persisted locally. It is:
 | `allowedProperties` | `string[]` | — | Allowlist for event properties |
 | `deniedProperties` | `string[]` | — | Blocklist for event properties |
 | `anonymizeUserId` | `boolean` | `false` | SHA-256 hash `distinctId` |
+| `respectDoNotTrack` | `boolean` | `true` | Auto opt-out if GPC/DNT browser signal detected (web only) |
 | `flushInterval` | `number` | `30000` | Auto-flush interval (ms) |
 | `maxQueueSize` | `number` | `500` | Max events in queue |
 | `maxBatchSize` | `number` | `50` | Events per adapter call |
@@ -174,20 +175,75 @@ A UUID v4 is generated on first run and persisted locally. It is:
 | `debug` | `boolean` | `false` | Verbose console logging |
 | `disabled` | `boolean` | `false` | Hard-disable all tracking |
 | `middleware` | `IMiddleware[]` | `[]` | Custom middleware chain |
+| `consentPolicyVersion` | `string` | — | Reset consent when policy version changes |
+| `consentExpiryMs` | `number` | — | Reset consent after N ms of age (e.g. 1 year) |
+| `enableSessionTracking` | `boolean` | `false` | Attach session IDs and emit `$session_start` events |
+| `enableEventCounting` | `boolean` | `false` | Count events by daily/weekly/monthly/all-time |
+| `enableLocalArchive` | `boolean` | `false` | Keep a permanent local copy of all events (GDPR Art. 20) |
+| `cleanupAfterFlush` | `CleanupConfig` | — | Prune old events from adapters after delivery |
 
 ### Client Methods
 
 ```ts
-client.capture(eventName, properties?)   // Track a custom event
-client.screen(screenName, properties?)   // Track a screen/page view
-client.identify(userId, traits?)         // Link session to a user
-client.alias(newId, existingId)          // Merge two identities
-client.reset()                           // Clear identity + queue
-client.optIn()                           // Grant consent
-client.optOut()                          // Revoke consent + clear queue
-client.getConsentStatus()                // 'opted-in' | 'opted-out' | 'unknown'
-client.flush()                           // Force-send queued events
-client.shutdown()                        // Flush + stop timers (call on unmount)
+// Event tracking
+client.capture(eventName, properties?, options?)  // Track a custom event
+client.screen(screenName, properties?)            // Track a screen/page view
+client.identify(userId, traits?)                  // Link session to a user
+client.alias(newId, existingId)                   // Merge two identities
+client.group(groupId, traits?)                    // Associate with an org/workspace
+
+// Super properties (auto-merged into every event)
+client.register({ environment: 'prod' })          // Register persistent properties
+client.unregister('environment')                  // Remove specific key(s)
+client.getRegisteredProperties()                  // Snapshot of registered props
+
+// Consent
+client.optIn()                                    // Grant consent
+client.optOut()                                   // Revoke consent + clear queue
+client.getConsentStatus()                         // 'opted-in' | 'opted-out' | 'unknown'
+client.getConsentHistory()                        // Audit trail of consent changes
+
+// Identity
+client.reset()                                    // Clear identity + queue + session
+
+// GDPR
+client.exportUserData()                           // Art. 20 — full local data snapshot
+client.deleteUserData({ resetConsent? })          // Art. 17 — erase all local data
+
+// Lifecycle
+client.flush()                                    // Force-send queued events
+client.shutdown()                                 // Flush + stop timers (call on unmount)
+
+// Diagnostics
+client.getQueuedEventCount()                      // Current queue depth
+client.getEventCount(name, period, date?)         // Event frequency (requires enableEventCounting)
+```
+
+### `CaptureOptions`
+
+Pass a third argument to `capture()` for advanced use cases:
+
+```ts
+// Back-date an offline event
+client.capture('purchase_completed', { amount: 29.99 }, {
+  timestamp: '2026-01-15T10:00:00.000Z',
+});
+
+// Inject a server-side deduplication ID
+client.capture('order_created', { orderId: '123' }, {
+  messageId: '550e8400-e29b-41d4-a716-446655440000',
+});
+```
+
+### UTM / Attribution Capture (web only)
+
+Call once at app startup to capture marketing attribution into super properties:
+
+```ts
+import { captureUtmParams } from '@sunglasses/react';
+
+const client = await SunglassesCore.create({ ... });
+captureUtmParams(client); // reads utm_source/medium/campaign + document.referrer
 ```
 
 ## Custom Middleware

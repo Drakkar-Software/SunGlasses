@@ -45,6 +45,7 @@ function makeClient(): ISunglassesClient {
       archivedEvents: [],
       eventCountSummary: {},
     })),
+    deleteUserData: vi.fn(async () => {}),
   };
 }
 
@@ -105,7 +106,10 @@ describe('useScreenTracking', () => {
     window.history.pushState({}, '', '/home');
 
     const unmount = await mountScreenTracking(client);
-    expect(client.screen).toHaveBeenCalledWith('/home', { $url: '/home' });
+    expect(client.screen).toHaveBeenCalledWith(
+      '/home',
+      expect.objectContaining({ $path: '/home', $url: expect.stringContaining('/home') })
+    );
     await unmount();
   });
 
@@ -118,7 +122,10 @@ describe('useScreenTracking', () => {
       window.history.pushState({}, '', '/about');
     });
 
-    expect(client.screen).toHaveBeenCalledWith('/about', { $url: '/about' });
+    expect(client.screen).toHaveBeenCalledWith(
+      '/about',
+      expect.objectContaining({ $path: '/about', $url: expect.stringContaining('/about'), $referrer: '/' })
+    );
     await unmount();
   });
 
@@ -131,7 +138,10 @@ describe('useScreenTracking', () => {
       window.history.replaceState({}, '', '/replaced');
     });
 
-    expect(client.screen).toHaveBeenCalledWith('/replaced', { $url: '/replaced' });
+    expect(client.screen).toHaveBeenCalledWith(
+      '/replaced',
+      expect.objectContaining({ $path: '/replaced', $url: expect.stringContaining('/replaced'), $referrer: '/' })
+    );
     await unmount();
   });
 
@@ -195,7 +205,14 @@ describe('useScreenTracking', () => {
     const mapper = (path: string) => path.replace(/\/users\/\d+\//, '/users/:id/');
     const unmount = await mountScreenTracking(client, { screenNameMapper: mapper });
 
-    expect(client.screen).toHaveBeenCalledWith('/users/:id/profile', { $url: '/users/42/profile' });
+    // mapper transforms the screen name; $path/$url still reflect the actual URL
+    expect(client.screen).toHaveBeenCalledWith(
+      '/users/:id/profile',
+      expect.objectContaining({
+        $path: '/users/42/profile',
+        $url: expect.stringContaining('/users/42/profile'),
+      })
+    );
     await unmount();
   });
 

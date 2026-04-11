@@ -38,12 +38,27 @@ export class ConsentManager {
    * Load persisted consent state. Must be called once during SDK initialization.
    * @param defaultOptIn — when no persisted state exists, opt-in (true) or opt-out (false)
    * @param policyVersion — current policy version; if it differs from stored, consent resets
+   * @param expiryMs — if set, consent older than this resets to 'unknown'
    */
-  async initialize(defaultOptIn: boolean, policyVersion?: string): Promise<void> {
+  async initialize(defaultOptIn: boolean, policyVersion?: string, expiryMs?: number): Promise<void> {
     try {
       const raw = await this.storage.read(STORAGE_KEY);
       if (raw !== null) {
         const parsed = JSON.parse(raw) as ConsentState;
+
+        // Check consent age — if expired, reset to unknown so user is prompted again
+        if (
+          expiryMs !== undefined &&
+          parsed.status !== 'unknown' &&
+          parsed.updatedAt !== null
+        ) {
+          const ageMs = Date.now() - new Date(parsed.updatedAt).getTime();
+          if (ageMs > expiryMs) {
+            this.logger.debug('ConsentManager: consent expired, resetting to unknown');
+            await this.resetToUnknown(policyVersion);
+            return;
+          }
+        }
 
         // Check if policy version has changed — if so, reset consent to unknown
         if (
@@ -155,6 +170,28 @@ export class ConsentManager {
   /** Returns a copy of the consent audit trail (oldest first). */
   getHistory(): ConsentHistoryEntry[] {
     return [...(this.state.history ?? [])];
+  }
+
+  /**
+   * Reset consent status to 'unknown'.
+   * Used internally by consent expiry and deleteUserData().
+   * Appends a history entry so the reset is auditable.
+   */
+  async resetToUnknown(policyVersion?: string): Promise<void> {
+    const timestamp = nowISO();
+    const entry: ConsentHistoryEntry = {
+      status: 'unknown',
+      policyVersion: policyVersion ?? this.state.policyVersion,
+      timestamp,
+    };
+    this.state = {
+      status: 'unknown',
+      updatedAt: timestamp,
+      policyVersion: policyVersion ?? this.state.policyVersion,
+      history: this.appendHistory(this.state.history ?? [], entry),
+    };
+    this.logger.debug('ConsentManager: reset to unknown');
+    await this.persist();
   }
 
   // ── Private ─────────────────────────────────────────────────────────────────

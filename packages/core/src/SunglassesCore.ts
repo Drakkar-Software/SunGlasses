@@ -8,6 +8,7 @@ import { PiiSanitizer } from './PiiSanitizer.js';
 import { SessionManager } from './SessionManager.js';
 import { TraitManager } from './TraitManager.js';
 import type {
+  CaptureOptions,
   CleanupConfig,
   ConsentHistoryEntry,
   ConsentStatus,
@@ -26,7 +27,7 @@ import { nowISO } from './utils/timestamp.js';
 import { generateUUID } from './utils/uuid.js';
 
 const LIBRARY_NAME = '@sunglasses/core';
-const LIBRARY_VERSION = '0.1.0';
+const LIBRARY_VERSION = '0.2.0';
 
 const DEFAULT_FLUSH_INTERVAL = 30_000;
 const DEFAULT_MAX_QUEUE_SIZE = 500;
@@ -66,7 +67,9 @@ export class SunglassesCore implements ISunglassesClient {
       | 'disabled'
       | 'anonymizeUserId'
     >
-  >;
+  > & {
+    consentPolicyVersion: string | undefined;
+  };
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private isShutdown = false;
   /** Guard against concurrent flushes — prevents double-send. */
@@ -99,6 +102,7 @@ export class SunglassesCore implements ISunglassesClient {
       debug: config.debug ?? false,
       disabled: config.disabled ?? false,
       anonymizeUserId: config.anonymizeUserId ?? false,
+      consentPolicyVersion: config.consentPolicyVersion,
     };
     this.consent = consent;
     this.identity = identity;
@@ -174,7 +178,7 @@ export class SunglassesCore implements ISunglassesClient {
     );
 
     // Initialize subsystems
-    await consent.initialize(config.defaultOptIn ?? false, config.consentPolicyVersion);
+    await consent.initialize(config.defaultOptIn ?? false, config.consentPolicyVersion, config.consentExpiryMs);
     await identity.initialize();
     await queue.initialize();
     await traitManager.initialize();
@@ -226,8 +230,8 @@ export class SunglassesCore implements ISunglassesClient {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  capture(eventName: string, properties?: Record<string, unknown>): void {
-    this.enqueueEvent('capture', eventName, properties);
+  capture(eventName: string, properties?: Record<string, unknown>, options?: CaptureOptions): void {
+    this.enqueueEvent('capture', eventName, properties, options);
   }
 
   screen(screenName: string, properties?: Record<string, unknown>): void {
@@ -437,6 +441,40 @@ export class SunglassesCore implements ISunglassesClient {
     };
   }
 
+  // ── Data erasure ───────────────────────────────────────────────────────────
+
+  /**
+   * Erase all locally held user data. GDPR Article 17 — right to erasure.
+   */
+  async deleteUserData(options: { resetConsent?: boolean } = {}): Promise<void> {
+    // Clear persisted event data
+    await this.queue.clear();
+    await this.traitManager.clearTraits();
+    await this._eventCounter?.reset();
+    if (this.sessionManager) await this.sessionManager.end();
+    if (this.localArchive) await this.localArchive.clear();
+
+    // Reset identity — generates a new anonymousId, clears distinctId
+    await this.identity.reset();
+
+    // Clear in-memory state
+    this.groupId = null;
+    this.superProperties.clear();
+
+    // Optionally reset consent (kept separate because the audit trail has
+    // regulatory significance — callers must explicitly opt into erasing it)
+    if (options.resetConsent) {
+      await this.consent.resetToUnknown(this.config.consentPolicyVersion);
+      // Stop auto-flush — no events should be sent while consent is unknown
+      this.stopFlushTimer();
+    }
+
+    // Notify adapters so they can clear any remote session state
+    for (const adapter of this.adapters) {
+      await adapter.reset?.();
+    }
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────────
 
   private canCapture(): boolean {
@@ -449,7 +487,8 @@ export class SunglassesCore implements ISunglassesClient {
   private enqueueEvent(
     type: EventType,
     eventName: string,
-    properties?: Record<string, unknown>
+    properties?: Record<string, unknown>,
+    options?: CaptureOptions
   ): void {
     if (!this.canCapture()) return;
 
@@ -479,8 +518,8 @@ export class SunglassesCore implements ISunglassesClient {
       event: eventName,
       distinctId: this.identity.getEffectiveDistinctId(),
       anonymousId: identityState.anonymousId,
-      timestamp: nowISO(),
-      messageId: generateUUID(),
+      timestamp: options?.timestamp ?? nowISO(),
+      messageId: options?.messageId ?? generateUUID(),
       properties: mergedProperties,
       context: this.buildContext(sessionId),
     };
@@ -565,6 +604,41 @@ export class SunglassesCore implements ISunglassesClient {
 
     if (this.groupId !== null) {
       ctx.group = { id: this.groupId };
+    }
+
+    // Auto-enrich device / screen / locale from browser environment (web only).
+    // Uses globalThis indirection to stay within lib: ["ES2020"] without DOM types.
+    if (this.config.platform === 'web') {
+      if ('navigator' in globalThis) {
+        type NavHints = { userAgent?: string; language?: string };
+        const nav = (globalThis as Record<string, unknown>)['navigator'] as NavHints;
+        const ua = nav.userAgent ?? '';
+
+        let os = 'Unknown';
+        if (/iPhone|iPad|iPod/.test(ua))      os = 'iOS';
+        else if (/Android/.test(ua))          os = 'Android';
+        else if (/Windows/.test(ua))          os = 'Windows';
+        else if (/Mac OS X/.test(ua))         os = 'macOS';
+        else if (/Linux/.test(ua))            os = 'Linux';
+
+        let deviceType = 'desktop';
+        if (/iPhone|iPod/.test(ua) || (/Android/.test(ua) && !/Tablet|tablet/.test(ua) && !/iPad/.test(ua))) {
+          deviceType = 'mobile';
+        } else if (/iPad/.test(ua) || /Tablet|tablet/.test(ua)) {
+          deviceType = 'tablet';
+        }
+
+        ctx.device = { type: deviceType, os };
+        if (nav.language) ctx.locale = nav.language;
+      }
+
+      if ('screen' in globalThis) {
+        type ScreenHints = { width?: number; height?: number };
+        const scr = (globalThis as Record<string, unknown>)['screen'] as ScreenHints;
+        if (scr.width && scr.height) {
+          ctx.screen = { width: scr.width, height: scr.height };
+        }
+      }
     }
 
     return ctx;

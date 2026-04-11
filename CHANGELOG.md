@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-04-11
+
+### Added
+
+- **Device / browser context auto-enrichment** (`@sunglasses/core`): `buildContext()` now automatically populates `context.device` (type + OS detected from `userAgent`), `context.screen` (width × height), and `context.locale` (`navigator.language`) on web platform — fields that existed in the type but were always empty in emitted events
+- **UTM / attribution capture** (`@sunglasses/react`): new `captureUtmParams(client)` utility reads `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term` from the current URL's search params plus `$referrer` / `$referring_domain` from `document.referrer`, and registers them as super properties via `client.register()`
+- **Screen URL metadata** (`@sunglasses/react`): `useScreenTracking` now automatically attaches `$url` (full URL), `$path` (pathname), `$title` (document title), and `$referrer` (previous path for SPA navigation; `document.referrer` on initial load) to every screen event
+- **`client.deleteUserData()`** (`@sunglasses/core`): GDPR Article 17 right to erasure — clears event queue, traits, session, event counts, local archive; resets identity (new `anonymousId`); calls `adapter.reset()` on all adapters; optionally resets consent to `'unknown'` via `{ resetConsent: true }`
+- **`consentExpiryMs`** config option (`@sunglasses/core`): time-based consent expiry — if stored consent is older than the configured threshold it is automatically reset to `'unknown'` during SDK initialization, prompting the user to re-consent; complements `consentPolicyVersion` (version-based reset)
+- **`CaptureOptions`** (`@sunglasses/core`): `capture(eventName, properties?, options?)` now accepts an optional third argument with `{ timestamp?: string; messageId?: string }` — useful for back-dating offline events or injecting server-side deduplication IDs
+
+### Fixed
+
+- **`tsconfig/base.json`**: set `incremental: false` — TypeScript 5.4+ requires `tsBuildInfoFile` when `incremental: true` is used without emitting to a single file; this was causing `tsup --dts` build failures that were previously hidden by Turborepo's cache
+- **`packages/core/tsconfig.json`**: added `"DOM"` to `lib` — `setInterval`, `clearInterval`, `console`, `crypto`, and related browser globals are in the DOM lib, not ES2020; their absence was causing DTS build failures
+- **`PiiSanitizer`**: added explicit `as Record<string, unknown>` casts on `deepSanitizeValues()` return sites — fixes TypeScript `TS2322` errors that appeared after restoring strict DTS compilation
+
 ### Added
 
 - **Session tracking**: `enableSessionTracking` config + `SessionManager` subsystem; session IDs (random UUIDs) are attached to every event's `context.sessionId`; sessions expire after configurable idle timeout (default 30 min); synthetic `$session_start` event emitted at session boundary

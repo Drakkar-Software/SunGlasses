@@ -6,6 +6,11 @@ import type { ISunglassesClient, ScreenTrackingOptions } from '@sunglasses/core'
 // than once at the same time (e.g. two components both calling useScreenTracking).
 let historyPatched = false;
 
+// Track the previous path for SPA referrer attribution.
+// On the initial page view this is null, so document.referrer (external site) is used.
+// On subsequent SPA navigations, this holds the path navigated away from.
+let previousPath: string | null = null;
+
 /**
  * Web screen tracking via the History API.
  *
@@ -46,7 +51,20 @@ export function useScreenTracking(
 
     const handleRouteChange = (path: string): void => {
       const name = mapperRef.current ? mapperRef.current(path) : path;
-      clientRef.current.screen(name, { $url: path });
+      const props: Record<string, unknown> = {
+        $path: path,
+        $url: window.location.href,
+      };
+      if (document.title) props.$title = document.title;
+      // Use tracked previous path for SPA navigation; fall back to
+      // document.referrer only on the initial page view (previousPath === null).
+      if (previousPath !== null) {
+        props.$referrer = previousPath;
+      } else if (document.referrer) {
+        props.$referrer = document.referrer;
+      }
+      previousPath = path;
+      clientRef.current.screen(name, props);
     };
 
     // Track initial page view
@@ -76,6 +94,7 @@ export function useScreenTracking(
       history.replaceState = originalReplace;
       window.removeEventListener('popstate', onPopState);
       historyPatched = false;
+      previousPath = null;
     };
   }, [useHistoryApi]); // screenNameMapper is accessed via ref — no dep needed
 }

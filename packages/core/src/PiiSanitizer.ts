@@ -68,7 +68,7 @@ export class PiiSanitizer implements IMiddleware {
         Object.entries(result).filter(([key]) => allowed.has(key))
       );
       // Still recursively sanitize values within allowed keys
-      return this.deepSanitizeValues(result);
+      return this.deepSanitizeValues(result) as Record<string, unknown>;
     }
 
     // Step 2: user-configured blocklist (top level)
@@ -80,7 +80,7 @@ export class PiiSanitizer implements IMiddleware {
     }
 
     // Steps 3 + 4: strip PII keys and values recursively
-    return this.deepSanitizeValues(result);
+    return this.deepSanitizeValues(result) as Record<string, unknown>;
   }
 
   /**
