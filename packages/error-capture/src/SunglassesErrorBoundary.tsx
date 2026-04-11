@@ -62,9 +62,10 @@ export class SunglassesErrorBoundary extends React.Component<Props, State> {
       beforeCapture,
     } = config;
 
-    const message = error.message.slice(0, maxMessageLength);
+    const rawMessage = error.message;
+    const message = rawMessage.slice(0, maxMessageLength);
 
-    if (ignorePatterns.some((p) => p.test(message))) return;
+    if (ignorePatterns.some((p) => p.test(rawMessage))) return;
 
     let props: Record<string, unknown> = {
       $error_message: message,

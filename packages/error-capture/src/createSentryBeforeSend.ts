@@ -120,7 +120,7 @@ export function createSentryBeforeSend(
     const rawMessage = exc?.value ?? '';
     const message = rawMessage.slice(0, maxMessageLength);
 
-    if (!ignorePatterns.some((p) => p.test(message))) {
+    if (!ignorePatterns.some((p) => p.test(rawMessage))) {
       let props: Record<string, unknown> = {
         $error_message: message,
         $error_type: exc?.type ?? 'Error',

@@ -147,6 +147,18 @@ describe('createSentryBeforeSend', () => {
     expect(client.capture).not.toHaveBeenCalled();
   });
 
+  it('ignorePattern matched against full message even when maxMessageLength truncates it', () => {
+    // pattern target starts at char 40, maxMessageLength cuts at 50 — must still match
+    const msg = 'Failed to process request for user: database connection refused'; // 63 chars
+    const beforeSend = createSentryBeforeSend(client, {
+      maxMessageLength: 50,
+      ignorePatterns: [/database connection/],
+    });
+    beforeSend(makeSentryEvent(msg), null);
+
+    expect(client.capture).not.toHaveBeenCalled();
+  });
+
   it('still returns the event to Sentry when ignorePattern matches', () => {
     const beforeSend = createSentryBeforeSend(client, {
       ignorePatterns: [/ResizeObserver/],

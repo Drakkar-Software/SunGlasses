@@ -163,6 +163,31 @@ describe('SunglassesErrorBoundary', () => {
     document.body.removeChild(container);
   });
 
+  it('ignorePattern matched against full message even when truncated', () => {
+    const client = makeClient();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    // ThrowLong: message has pattern beyond the truncation boundary
+    function ThrowLong(): React.ReactElement {
+      throw new TypeError('Failed to process request for user: database connection refused');
+    }
+
+    act(() => {
+      createRoot(container).render(
+        <SunglassesErrorBoundary
+          client={client}
+          config={{ maxMessageLength: 50, ignorePatterns: [/database connection/] }}
+        >
+          <ThrowLong />
+        </SunglassesErrorBoundary>
+      );
+    });
+
+    expect(client.capture).not.toHaveBeenCalled();
+    document.body.removeChild(container);
+  });
+
   it('applies beforeCapture transform to props', () => {
     const client = makeClient();
     const container = document.createElement('div');
