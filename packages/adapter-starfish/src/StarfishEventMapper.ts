@@ -1,4 +1,4 @@
-import type { SunglassesEvent } from '@sunglasses/core';
+import type { CleanupConfig, SunglassesEvent } from '@sunglasses/core';
 
 /**
  * The document structure stored at the Starfish path.
@@ -53,4 +53,38 @@ export function mergeEvents(
  */
 export function resolveStoragePath(template: string, identity: string): string {
   return template.replace('{identity}', encodeURIComponent(identity));
+}
+
+/**
+ * Prune a Starfish event document according to cleanup configuration.
+ *
+ * Applied rules (in order):
+ * 1. Remove events older than `maxAgeMs` milliseconds.
+ * 2. If `maxEventsPerIdentity` is set (> 0), keep only the most recent N events.
+ *
+ * Returns a new document — does not mutate the input.
+ */
+export function pruneDocument(
+  doc: StarfishEventDocument,
+  config: CleanupConfig
+): StarfishEventDocument {
+  let events = [...doc.events];
+
+  // Step 1: age-based pruning
+  if (config.maxAgeMs !== undefined && config.maxAgeMs > 0) {
+    const cutoff = Date.now() - config.maxAgeMs;
+    events = events.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
+  }
+
+  // Step 2: count-based pruning (keep most recent N)
+  const maxN = config.maxEventsPerIdentity ?? 0;
+  if (maxN > 0 && events.length > maxN) {
+    events = events.slice(events.length - maxN);
+  }
+
+  return {
+    ...doc,
+    events,
+    lastUpdated: new Date().toISOString(),
+  };
 }

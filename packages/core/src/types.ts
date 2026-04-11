@@ -34,6 +34,31 @@ export interface IAnalyticsAdapter {
   reset?(): Promise<void>;
   /** Called on SDK shutdown — adapter should flush pending work. */
   shutdown?(): Promise<void>;
+  /**
+   * Called after a successful flush with the events that were delivered.
+   * Use this to archive or remove old events from the remote store.
+   * Implement this in adapters that accumulate data (e.g. StarfishAnalyticsAdapter).
+   */
+  cleanupAfterFlush?(delivered: SunglassesEvent[], config: CleanupConfig): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Controls what happens to delivered events in the remote store after a
+ * successful flush. Adapters that support `cleanupAfterFlush` will use this
+ * to decide which events to archive or remove.
+ */
+export interface CleanupConfig {
+  /** Remove events older than this many milliseconds. Defaults to 30 days. */
+  maxAgeMs?: number;
+  /**
+   * Keep only the most recent N events per identity.
+   * Applied after `maxAgeMs`. Set to 0 to disable.
+   */
+  maxEventsPerIdentity?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +184,22 @@ export interface SunglassesConfig {
   // ── Middleware ─────────────────────────────────────────────────────────────
   /** Additional middleware appended after the built-in PiiSanitizer. */
   middleware?: IMiddleware[];
+
+  // ── Cleanup ───────────────────────────────────────────────────────────────
+  /**
+   * When set, calls `adapter.cleanupAfterFlush()` after every successful flush.
+   * Only adapters that implement `cleanupAfterFlush` will respond.
+   * Useful for pruning old events from Starfish documents or remote stores.
+   */
+  cleanupAfterFlush?: CleanupConfig;
+
+  // ── Event counting ────────────────────────────────────────────────────────
+  /**
+   * When true, event counts are tracked in storage (see EventCounter).
+   * The FrequencyMiddleware must be added to `middleware` to attach counts
+   * to events automatically.
+   */
+  enableEventCounting?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +234,56 @@ export interface ISunglassesClient {
   flush(): Promise<void>;
   /** Flush and tear down timers. Call on app/component unmount. */
   shutdown(): Promise<void>;
+
+  // ── Event counting ────────────────────────────────────────────────────────
+  /**
+   * Get the number of times an event has been fired in a given period.
+   * Returns 0 if event counting is disabled or no data exists.
+   */
+  getEventCount(eventName: string, period: EventCountPeriod, date?: Date): Promise<number>;
+
+  /**
+   * Reset the count for a specific event (or all events if omitted).
+   */
+  resetEventCount(eventName?: string): Promise<void>;
+
+  /** Access the underlying EventCounter for advanced usage. */
+  readonly eventCounter: IEventCounter | null;
+
+  /** Expose the current queue length (e.g. for UI indicators). */
+  getQueuedEventCount(): number;
+}
+
+// ---------------------------------------------------------------------------
+// Event counting
+// ---------------------------------------------------------------------------
+
+/** Time granularity for event frequency tracking. */
+export type EventCountPeriod = 'daily' | 'weekly' | 'monthly' | 'all-time';
+
+/**
+ * Tracks how many times each event has been fired, bucketed by time period.
+ * Counts are persisted to IStorageAdapter and survive app restarts.
+ */
+export interface IEventCounter {
+  /**
+   * Increment the count for an event on a given date (defaults to now).
+   */
+  increment(eventName: string, date?: Date): Promise<void>;
+
+  /**
+   * Get the count for an event in a period.
+   * - 'daily': count for the calendar day containing `date`
+   * - 'weekly': count for the ISO week containing `date` (Mon–Sun)
+   * - 'monthly': count for the calendar month containing `date`
+   * - 'all-time': total count across all time
+   */
+  getCount(eventName: string, period: EventCountPeriod, date?: Date): Promise<number>;
+
+  /**
+   * Reset the count for a specific event, or all events if `eventName` is omitted.
+   */
+  reset(eventName?: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------

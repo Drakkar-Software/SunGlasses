@@ -1,38 +1,39 @@
 import type { IAnalyticsAdapter, HttpAdapterConfig, SunglassesEvent } from '@sunglasses/core';
 import { scheduleRetry } from './RetryQueue.js';
 
-const DEFAULT_BATCH_SIZE = 50;
-const DEFAULT_FLUSH_INTERVAL_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_RETRY_BASE_DELAY_MS = 1_000;
 const DEFAULT_RETRY_MAX_DELAY_MS = 30_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
- * IAnalyticsAdapter that batches events and POSTs them to an HTTP endpoint.
+ * IAnalyticsAdapter that POSTs batches of events to an HTTP endpoint.
  *
- * Payload shape:
- * {
- *   "batch": SunglassesEvent[],
- *   "sentAt": "<ISO-8601>"
- * }
+ * Payload shape (POST body):
+ * ```json
+ * { "batch": SunglassesEvent[], "sentAt": "<ISO-8601>" }
+ * ```
  *
  * Retry policy:
- * - 2xx: success, batch discarded
- * - 4xx (except 429): non-retriable, batch discarded with warning
- * - 5xx, 429, network errors: retry with exponential backoff
+ * - 2xx: success
+ * - 4xx (except 429): non-retriable — batch discarded with warning
+ * - 5xx, 429, network errors, timeout: retry with exponential backoff
+ *
+ * Note: batching (how many events per call) is controlled by SunglassesCore
+ * via `maxBatchSize`. This adapter simply delivers whatever batch it receives.
  */
 export class HttpStorageAdapter implements IAnalyticsAdapter {
-  private readonly config: Required<HttpAdapterConfig>;
-  private pendingBatch: SunglassesEvent[] = [];
-  private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly config: Required<
+    Pick<
+      HttpAdapterConfig,
+      'endpoint' | 'headers' | 'maxRetries' | 'retryBaseDelayMs' | 'retryMaxDelayMs' | 'timeout'
+    >
+  >;
 
   constructor(config: HttpAdapterConfig) {
     this.config = {
       endpoint: config.endpoint,
       headers: config.headers ?? {},
-      batchSize: config.batchSize ?? DEFAULT_BATCH_SIZE,
-      flushIntervalMs: config.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
       maxRetries: config.maxRetries ?? DEFAULT_MAX_RETRIES,
       retryBaseDelayMs: config.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS,
       retryMaxDelayMs: config.retryMaxDelayMs ?? DEFAULT_RETRY_MAX_DELAY_MS,
@@ -46,15 +47,11 @@ export class HttpStorageAdapter implements IAnalyticsAdapter {
   }
 
   async reset(): Promise<void> {
-    this.pendingBatch = [];
+    // No local state to clear
   }
 
   async shutdown(): Promise<void> {
-    this.stopTimer();
-    if (this.pendingBatch.length > 0) {
-      await this.postBatch(this.pendingBatch, 0);
-      this.pendingBatch = [];
-    }
+    // All delivery is synchronous in send(); nothing pending
   }
 
   private async postBatch(batch: SunglassesEvent[], attempt: number): Promise<void> {
@@ -79,9 +76,7 @@ export class HttpStorageAdapter implements IAnalyticsAdapter {
 
       if (timeoutId !== null) clearTimeout(timeoutId);
 
-      if (response.ok) {
-        return; // Success
-      }
+      if (response.ok) return;
 
       // 4xx (except 429) are non-retriable
       if (response.status >= 400 && response.status < 500 && response.status !== 429) {
@@ -117,22 +112,5 @@ export class HttpStorageAdapter implements IAnalyticsAdapter {
         maxDelayMs: this.config.retryMaxDelayMs,
       }
     );
-  }
-
-  private startTimer(): void {
-    if (this.flushTimer !== null) return;
-    this.flushTimer = setInterval(() => {
-      if (this.pendingBatch.length > 0) {
-        const toSend = this.pendingBatch.splice(0, this.config.batchSize);
-        this.postBatch(toSend, 0).catch(() => {});
-      }
-    }, this.config.flushIntervalMs);
-  }
-
-  private stopTimer(): void {
-    if (this.flushTimer !== null) {
-      clearInterval(this.flushTimer);
-      this.flushTimer = null;
-    }
   }
 }

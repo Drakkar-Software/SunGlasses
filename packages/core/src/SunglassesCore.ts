@@ -1,13 +1,17 @@
 import { ConsentManager } from './ConsentManager.js';
+import { EventCounter } from './EventCounter.js';
 import { EventQueue } from './EventQueue.js';
 import { IdentityManager } from './IdentityManager.js';
 import { MiddlewarePipeline } from './MiddlewarePipeline.js';
 import { PiiSanitizer } from './PiiSanitizer.js';
 import type {
+  CleanupConfig,
   ConsentStatus,
   EventContext,
+  EventCountPeriod,
   EventType,
   IAnalyticsAdapter,
+  IEventCounter,
   ISunglassesClient,
   SunglassesConfig,
   SunglassesEvent,
@@ -36,6 +40,8 @@ export class SunglassesCore implements ISunglassesClient {
   private readonly queue: EventQueue;
   private readonly pipeline: MiddlewarePipeline;
   private readonly adapters: IAnalyticsAdapter[];
+  private readonly _eventCounter: EventCounter | null;
+  private readonly cleanupConfig: CleanupConfig | null;
   private readonly config: Required<
     Pick<
       SunglassesConfig,
@@ -54,13 +60,16 @@ export class SunglassesCore implements ISunglassesClient {
   >;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private isShutdown = false;
+  /** Guard against concurrent flushes — prevents double-send. */
+  private flushInFlight = false;
 
   private constructor(
     config: SunglassesConfig,
     consent: ConsentManager,
     identity: IdentityManager,
     queue: EventQueue,
-    pipeline: MiddlewarePipeline
+    pipeline: MiddlewarePipeline,
+    eventCounter: EventCounter | null
   ) {
     this.config = {
       defaultOptIn: config.defaultOptIn ?? false,
@@ -80,6 +89,8 @@ export class SunglassesCore implements ISunglassesClient {
     this.queue = queue;
     this.pipeline = pipeline;
     this.adapters = config.adapters;
+    this._eventCounter = eventCounter;
+    this.cleanupConfig = config.cleanupAfterFlush ?? null;
   }
 
   /**
@@ -109,7 +120,19 @@ export class SunglassesCore implements ISunglassesClient {
     const middlewares = [piiSanitizer, ...(config.middleware ?? [])];
     const pipeline = new MiddlewarePipeline(middlewares, logger);
 
-    const instance = new SunglassesCore(config, consent, identity, queue, pipeline);
+    // Optional event counting
+    const eventCounter = config.enableEventCounting
+      ? new EventCounter(config.storage, logger)
+      : null;
+
+    const instance = new SunglassesCore(
+      config,
+      consent,
+      identity,
+      queue,
+      pipeline,
+      eventCounter
+    );
 
     // Initialize subsystems
     await consent.initialize(config.defaultOptIn ?? false);
@@ -125,6 +148,7 @@ export class SunglassesCore implements ISunglassesClient {
       platform: config.platform ?? 'web',
       defaultOptIn: config.defaultOptIn ?? false,
       consentStatus: consent.status,
+      eventCounting: config.enableEventCounting ?? false,
     });
 
     return instance;
@@ -156,7 +180,7 @@ export class SunglassesCore implements ISunglassesClient {
         });
       })
       .catch(() => {
-        // Identity failed — still enqueue with anonymousId
+        // Identity storage failed — still enqueue with anonymousId
         this.enqueueEvent('identify', '$identify', { ...traits });
       });
   }
@@ -220,6 +244,25 @@ export class SunglassesCore implements ISunglassesClient {
     }
   }
 
+  // ── Event counting ─────────────────────────────────────────────────────────
+
+  get eventCounter(): IEventCounter | null {
+    return this._eventCounter;
+  }
+
+  async getEventCount(eventName: string, period: EventCountPeriod, date?: Date): Promise<number> {
+    if (!this._eventCounter) return 0;
+    return this._eventCounter.getCount(eventName, period, date);
+  }
+
+  async resetEventCount(eventName?: string): Promise<void> {
+    await this._eventCounter?.reset(eventName);
+  }
+
+  getQueuedEventCount(): number {
+    return this.queue.size;
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────────
 
   private canCapture(): boolean {
@@ -247,6 +290,11 @@ export class SunglassesCore implements ISunglassesClient {
       properties: properties ?? {},
       context: this.buildContext(),
     };
+
+    // Increment event counter (fire-and-forget — never blocks capture)
+    if (this._eventCounter && type === 'capture') {
+      this._eventCounter.increment(eventName).catch(() => {});
+    }
 
     // Run through middleware pipeline asynchronously
     this.pipeline
@@ -282,25 +330,53 @@ export class SunglassesCore implements ISunglassesClient {
     return ctx;
   }
 
+  /**
+   * Flush up to maxBatchSize events to every adapter.
+   *
+   * Guards:
+   * - If a flush is already in flight, returns immediately (no double-send).
+   * - If ALL adapters succeed, events are removed from the queue.
+   * - If ANY adapter fails, events stay in the queue for the next flush attempt.
+   *   The failed adapter's own retry logic handles re-delivery.
+   */
   private async flushOnce(): Promise<void> {
+    if (this.flushInFlight) return;
     if (this.queue.size === 0) return;
 
     const batch = this.queue.peek(this.config.maxBatchSize);
     if (batch.length === 0) return;
 
-    for (const adapter of this.adapters) {
-      try {
-        await adapter.send(batch);
-      } catch {
-        // Individual adapter failures are handled inside the adapter (retry logic)
-        // We don't remove events from the queue on failure
-        return;
-      }
-    }
+    // Pass a frozen shallow copy to each adapter so they cannot mutate the queue slice
+    const safeBatch = Object.freeze([...batch]);
 
-    // All adapters succeeded — remove events from queue
-    this.queue.remove(batch.length);
-    await this.queue.persist();
+    this.flushInFlight = true;
+    try {
+      let allSucceeded = true;
+      for (const adapter of this.adapters) {
+        try {
+          await adapter.send(safeBatch);
+        } catch {
+          // This adapter failed. Others may still succeed.
+          // Leave events in the queue — the adapter's retry logic handles re-delivery.
+          allSucceeded = false;
+        }
+      }
+
+      if (allSucceeded) {
+        // All adapters delivered successfully — remove from queue and persist
+        this.queue.remove(batch.length);
+        await this.queue.persist();
+
+        // Post-flush cleanup (optional, fire-and-forget per adapter)
+        if (this.cleanupConfig) {
+          for (const adapter of this.adapters) {
+            adapter.cleanupAfterFlush?.(safeBatch, this.cleanupConfig).catch(() => {});
+          }
+        }
+      }
+    } finally {
+      this.flushInFlight = false;
+    }
   }
 
   private startFlushTimer(): void {

@@ -222,6 +222,173 @@ SunglassesCore.create({
 
 Events are stored as a JSON document per identity at `storagePath`. The adapter uses Starfish's optimistic locking (`baseHash`) to handle concurrent writes safely.
 
+## Event Frequency Counting
+
+Track how many times each event fires, bucketed by day, week, month, or all-time. Counts survive app restarts.
+
+```ts
+const client = await SunglassesCore.create({
+  enableEventCounting: true,
+  // Optional: attach counts to event properties automatically
+  middleware: [
+    new FrequencyMiddleware({
+      counter: client.eventCounter!,
+      periods: ['daily', 'monthly'],
+    }),
+  ],
+  ...
+});
+
+// Check counts at any time
+const todayClicks = await client.getEventCount('button_clicked', 'daily');
+const thisMonthClicks = await client.getEventCount('button_clicked', 'monthly');
+const totalClicks = await client.getEventCount('button_clicked', 'all-time');
+
+// Reset a specific event's counts
+await client.resetEventCount('button_clicked');
+```
+
+When `FrequencyMiddleware` is active, these properties are added to each event:
+```json
+{ "$count_daily": 3, "$count_monthly": 12 }
+```
+
+## Cleanup After Flush
+
+Automatically prune old events from remote stores after each successful flush. Currently implemented by `StarfishAnalyticsAdapter`.
+
+```ts
+SunglassesCore.create({
+  cleanupAfterFlush: {
+    maxAgeMs: 30 * 24 * 60 * 60 * 1000,  // Remove events older than 30 days
+    maxEventsPerIdentity: 1000,            // Keep at most 1000 events per user
+  },
+  adapters: [
+    new StarfishAnalyticsAdapter({ ... }),
+  ],
+  ...
+});
+```
+
+Cleanup is fire-and-forget — it never blocks the flush. Adapters that don't implement `cleanupAfterFlush` are silently skipped.
+
+## Sampling (Volume Reduction)
+
+Randomly drop a fraction of events to reduce analytics costs:
+
+```ts
+import { SamplingMiddleware } from '@sunglasses/core';
+
+// Keep only 10% of events (drop 90%)
+const sampling = new SamplingMiddleware({ sampleRate: 0.1 });
+
+// Consistent sampling: same user always included or excluded
+const consistentSampling = new SamplingMiddleware({
+  sampleRate: 0.2,
+  consistentSampling: true,  // Based on anonymousId hash
+});
+
+// Sample only specific events
+const targeted = new SamplingMiddleware({
+  sampleRate: 0.05,
+  onlyFor: ['page_view', 'hover'],  // High-volume events only
+});
+
+SunglassesCore.create({ middleware: [sampling], ... });
+```
+
+`$screen`, `$identify`, and `$alias` events are never sampled — only `capture` events are affected. A `$sample_rate` property is added to kept events.
+
+## Custom Adapters
+
+Implement `IAnalyticsAdapter` to send events to any destination:
+
+```ts
+import type { IAnalyticsAdapter, SunglassesEvent, CleanupConfig } from '@sunglasses/core';
+
+class FirebaseAdapter implements IAnalyticsAdapter {
+  async send(batch: SunglassesEvent[]): Promise<void> {
+    // batch is frozen — do not mutate it
+    for (const event of batch) {
+      await firebase.analytics().logEvent(event.event, event.properties);
+    }
+  }
+
+  async reset(): Promise<void> {
+    // Called on client.reset() — clear remote session if needed
+  }
+
+  async shutdown(): Promise<void> {
+    // Called on client.shutdown() — flush any pending state
+  }
+
+  // Optional: prune remote data after flush
+  async cleanupAfterFlush(delivered: SunglassesEvent[], config: CleanupConfig): Promise<void> {
+    // Remove delivered events from your remote store
+  }
+}
+```
+
+**Adapter rules (enforced by the privacy invariants):**
+- `send()` must never mutate the input `batch` array — it is frozen
+- `send()` may throw; the core will keep events in the queue and retry next flush
+- `send()` is called by the core only when the user has opted in
+
+## Custom Storage Adapters
+
+Implement `IStorageAdapter` to use any key-value store:
+
+```ts
+import type { IStorageAdapter } from '@sunglasses/core';
+
+class SecureStorageAdapter implements IStorageAdapter {
+  async read(key: string): Promise<string | null> {
+    return SecureStore.getItemAsync(key);
+  }
+  async write(key: string, value: string): Promise<void> {
+    await SecureStore.setItemAsync(key, value);
+  }
+  async delete(key: string): Promise<void> {
+    await SecureStore.deleteItemAsync(key);
+  }
+}
+```
+
+## Error Handling
+
+| Scenario | Behaviour |
+|----------|-----------|
+| Adapter `send()` throws | Events stay in queue; retry on next flush |
+| All adapters fail | Events stay in queue; no data is lost |
+| Storage quota exceeded | Write silently ignored; queue state may be inconsistent |
+| Network timeout (HTTP adapter) | Exponential backoff retry; discard after `maxRetries` |
+| Starfish 409 conflict | Pull → re-merge → re-push, up to `maxRetries` |
+| Middleware throws | Event is dropped; error is logged; pipeline continues |
+
+## Troubleshooting
+
+**Events are never sent**
+- Check consent: `client.getConsentStatus()` must be `'opted-in'`
+- Check `disabled: false` in your config
+- Enable `debug: true` and watch the console
+
+**Events are missing properties**
+- If `allowedProperties` is set, all other keys are stripped
+- Check `deniedProperties` for accidental matches
+- PII patterns (email, phone, IP, credit card) are redacted automatically
+
+**Queue grows but never empties**
+- All adapters are failing — check network and endpoint config
+- Events persist across restarts until an adapter succeeds
+
+**Starfish sync conflicts**
+- 409s are retried automatically (up to `maxRetries`)
+- High contention (many concurrent clients) may exhaust retries — increase `maxRetries`
+
+**Event counting returns 0**
+- Ensure `enableEventCounting: true` in your config
+- Counts only accumulate for `capture()` events (not screen/identify/alias)
+
 ## Contributing
 
 See [CLAUDE.md](./CLAUDE.md) for developer setup, architecture decisions, and privacy invariants.

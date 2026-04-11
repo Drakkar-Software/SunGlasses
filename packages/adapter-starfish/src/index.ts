@@ -2,9 +2,10 @@ export { StarfishAnalyticsAdapter } from './StarfishAnalyticsAdapter.js';
 export {
   createEmptyDocument,
   mergeEvents,
+  pruneDocument,
   resolveStoragePath,
 } from './StarfishEventMapper.js';
 export type { StarfishEventDocument } from './StarfishEventMapper.js';
 
 // Re-export config type for convenience
-export type { StarfishAdapterConfig } from '@sunglasses/core';
+export type { StarfishAdapterConfig, CleanupConfig } from '@sunglasses/core';

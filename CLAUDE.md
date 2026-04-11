@@ -117,6 +117,121 @@ These invariants must never be broken:
 - Tests live in `src/__tests__/` alongside the code they test.
 - Vitest is the test runner; no Jest.
 
+## Testing Strategy
+
+### In-memory storage stub
+Every test that needs an `IStorageAdapter` uses a local stub:
+```ts
+function makeStorage() {
+  const store: Record<string, string> = {};
+  return {
+    read: async (key: string) => store[key] ?? null,
+    write: async (key: string, value: string) => { store[key] = value; },
+    delete: async (key: string) => { delete store[key]; },
+    _store: store, // expose for assertions
+  };
+}
+```
+
+### Testing with fake timers
+`SunglassesCore` uses `setInterval` for auto-flush. Use Vitest's fake timers:
+```ts
+beforeEach(() => vi.useFakeTimers());
+
+it('...', async () => {
+  const client = await SunglassesCore.create({ ... });
+  client.capture('event');
+  await vi.runAllTimersAsync(); // let the enqueue microtask settle
+  await client.flush();
+  expect(adapter.batches.length).toBe(1);
+});
+```
+
+### Testing new adapters
+```ts
+import { vi } from 'vitest';
+const mockFetch = vi.fn();
+global.fetch = mockFetch;
+
+mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+// Then call adapter.send(batch) and assert mockFetch was called
+```
+
+### Testing new middleware
+Middleware tests should cover:
+- Happy path: event passes through unchanged
+- Drop case: return null
+- Transform case: event properties modified
+- Error case: throw → treated as drop, should not propagate
+
+## Adapter Authoring Guide
+
+### IAnalyticsAdapter implementation checklist
+
+```ts
+class MyAdapter implements IAnalyticsAdapter {
+  // REQUIRED: deliver a batch of events
+  async send(batch: SunglassesEvent[]): Promise<void> {
+    // 1. Never mutate batch — it is Object.freeze'd by SunglassesCore
+    // 2. If delivery fails, throw — the core will keep events in the queue
+    // 3. Do not log distinctId or traits
+  }
+
+  // OPTIONAL: called on client.reset()
+  async reset(): Promise<void> {}
+
+  // OPTIONAL: called on client.shutdown() — flush any internal pending state
+  async shutdown(): Promise<void> {}
+
+  // OPTIONAL: called after a successful flush with cleanupAfterFlush config
+  async cleanupAfterFlush(delivered: SunglassesEvent[], config: CleanupConfig): Promise<void> {
+    // Never throws — log and swallow errors
+  }
+}
+```
+
+### IStorageAdapter implementation checklist
+```ts
+class MyStorage implements IStorageAdapter {
+  // All methods must be async and never throw to the caller
+  // Catch internal errors and silently ignore or log them
+  async read(key: string): Promise<string | null> { ... }
+  async write(key: string, value: string): Promise<void> { ... }
+  async delete(key: string): Promise<void> { ... }
+  async flush?(): Promise<void> { ... } // Only needed for HTTP-backed stores
+}
+```
+
+## Middleware Authoring Guide
+
+```ts
+import type { IMiddleware, MiddlewareNext, SunglassesEvent } from '@sunglasses/core';
+
+class MyMiddleware implements IMiddleware {
+  readonly name = 'MyMiddleware'; // must be unique
+
+  async process(event: SunglassesEvent, next: MiddlewareNext): Promise<SunglassesEvent | null> {
+    // Drop the event:
+    if (shouldDrop(event)) return null;
+
+    // Pass through unchanged:
+    return next(event);
+
+    // Mutate properties (always spread — never modify the event in-place):
+    return next({ ...event, properties: { ...event.properties, extra: 'value' } });
+
+    // NEVER throw — the pipeline catches errors and treats them as drops
+  }
+}
+```
+
+Rules:
+1. **Never throw** — return `null` to drop instead
+2. **Always spread** when modifying events — `{ ...event, properties: { ...event.properties } }`
+3. **Never log `distinctId`** or user traits
+4. **Call `next(event)`** to continue the pipeline
+5. **Async work is fine** — the pipeline `await`s each middleware
+
 ## Architecture Decision Records
 
 Key decisions made during initial design:

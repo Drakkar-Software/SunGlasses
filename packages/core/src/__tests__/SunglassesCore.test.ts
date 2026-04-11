@@ -1,0 +1,238 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SunglassesCore } from '../SunglassesCore.js';
+import type { IAnalyticsAdapter, IStorageAdapter } from '../types.js';
+
+function makeStorage(): IStorageAdapter & { _store: Record<string, string> } {
+  const store: Record<string, string> = {};
+  return {
+    read: async (key) => store[key] ?? null,
+    write: async (key, value) => { store[key] = value; },
+    delete: async (key) => { delete store[key]; },
+    _store: store,
+  };
+}
+
+function makeAdapter(): IAnalyticsAdapter & {
+  batches: unknown[][];
+  _reset: () => void;
+} {
+  const batches: unknown[][] = [];
+  return {
+    batches,
+    async send(batch) { batches.push([...batch]); },
+    _reset() { batches.length = 0; },
+  };
+}
+
+describe('SunglassesCore', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('throws if no adapters are provided', async () => {
+    await expect(
+      SunglassesCore.create({ adapters: [], storage: makeStorage() })
+    ).rejects.toThrow('at least one adapter');
+  });
+
+  it('starts opted-out by default (defaultOptIn: false)', async () => {
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: false,
+    });
+    expect(client.hasOptedOut()).toBe(true);
+    expect(client.hasOptedIn()).toBe(false);
+  });
+
+  it('starts opted-in when defaultOptIn: true', async () => {
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    expect(client.hasOptedIn()).toBe(true);
+  });
+
+  it('silently drops events when opted out', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: false,
+    });
+    client.capture('test_event');
+    expect(client.getQueuedEventCount()).toBe(0);
+  });
+
+  it('queues events after optIn()', async () => {
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: false,
+    });
+    await client.optIn();
+    client.capture('test_event', { foo: 'bar' });
+    // Pipeline is async — allow microtasks to settle
+    await vi.runAllTimersAsync();
+    expect(client.getQueuedEventCount()).toBe(1);
+  });
+
+  it('clears queue on optOut()', async () => {
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.capture('event_a');
+    await vi.runAllTimersAsync();
+    expect(client.getQueuedEventCount()).toBe(1);
+    await client.optOut();
+    expect(client.getQueuedEventCount()).toBe(0);
+  });
+
+  it('flush() sends queued events to adapter', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.capture('button_clicked');
+    await vi.runAllTimersAsync();
+    await client.flush();
+    expect(adapter.batches.length).toBe(1);
+    expect(client.getQueuedEventCount()).toBe(0);
+  });
+
+  it('does not double-flush when concurrent flush() calls race', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+      maxBatchSize: 100,
+    });
+    client.capture('event_1');
+    await vi.runAllTimersAsync();
+
+    // Fire two concurrent flushes
+    const [, ] = await Promise.all([client.flush(), client.flush()]);
+    expect(adapter.batches.length).toBe(1); // Only one actual send
+  });
+
+  it('events stay in queue when an adapter fails', async () => {
+    const failing: IAnalyticsAdapter = {
+      async send() { throw new Error('network error'); },
+    };
+    const client = await SunglassesCore.create({
+      adapters: [failing],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.capture('event_1');
+    await vi.runAllTimersAsync();
+    await client.flush();
+    // Event must still be in queue (adapter failed → not removed)
+    expect(client.getQueuedEventCount()).toBe(1);
+  });
+
+  it('adapter.send() receives a frozen copy (cannot mutate queue)', async () => {
+    let receivedBatch: unknown[] | null = null;
+    const adapter: IAnalyticsAdapter = {
+      async send(batch) {
+        receivedBatch = batch;
+        // Attempting to push should throw in strict mode / be silently ignored
+        try { (batch as unknown[]).push({} as never); } catch { /* expected */ }
+      },
+    };
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.capture('safe_event');
+    await vi.runAllTimersAsync();
+    await client.flush();
+    // Queue should still have 0 events (sent successfully)
+    expect(receivedBatch).not.toBeNull();
+    expect(client.getQueuedEventCount()).toBe(0);
+  });
+
+  it('disabled: true prevents all event capture', async () => {
+    const adapter = makeAdapter();
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+      disabled: true,
+    });
+    client.capture('test');
+    await vi.runAllTimersAsync();
+    await client.flush();
+    expect(adapter.batches.length).toBe(0);
+  });
+
+  it('reset() clears queue and calls adapter.reset()', async () => {
+    const resetFn = vi.fn();
+    const adapter: IAnalyticsAdapter = { async send() {}, reset: resetFn };
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+    });
+    client.capture('event_before_reset');
+    await vi.runAllTimersAsync();
+    await client.reset();
+    expect(client.getQueuedEventCount()).toBe(0);
+    expect(resetFn).toHaveBeenCalledOnce();
+  });
+
+  it('event counting increments on capture', async () => {
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: true,
+      enableEventCounting: true,
+    });
+    await client.optIn();
+    client.capture('button_clicked');
+    client.capture('button_clicked');
+    client.capture('page_viewed');
+    await vi.runAllTimersAsync();
+    expect(await client.getEventCount('button_clicked', 'all-time')).toBe(2);
+    expect(await client.getEventCount('page_viewed', 'all-time')).toBe(1);
+  });
+
+  it('getEventCount returns 0 when event counting is disabled', async () => {
+    const client = await SunglassesCore.create({
+      adapters: [makeAdapter()],
+      storage: makeStorage(),
+      defaultOptIn: true,
+      enableEventCounting: false,
+    });
+    client.capture('anything');
+    await vi.runAllTimersAsync();
+    expect(await client.getEventCount('anything', 'all-time')).toBe(0);
+  });
+
+  it('cleanupAfterFlush calls adapter.cleanupAfterFlush after success', async () => {
+    const cleanupFn = vi.fn();
+    const adapter: IAnalyticsAdapter = {
+      async send() {},
+      cleanupAfterFlush: cleanupFn,
+    };
+    const client = await SunglassesCore.create({
+      adapters: [adapter],
+      storage: makeStorage(),
+      defaultOptIn: true,
+      cleanupAfterFlush: { maxAgeMs: 86_400_000 },
+    });
+    client.capture('event');
+    await vi.runAllTimersAsync();
+    await client.flush();
+    // cleanupAfterFlush is fire-and-forget; allow microtasks
+    await vi.runAllTimersAsync();
+    expect(cleanupFn).toHaveBeenCalled();
+  });
+});
