@@ -31,7 +31,7 @@ export function createEmptyDocument(): StarfishEventDocument {
  */
 export function mergeEvents(
   remote: StarfishEventDocument,
-  incoming: SunglassesEvent[]
+  incoming: ReadonlyArray<SunglassesEvent>
 ): StarfishEventDocument {
   const existingIds = new Set(remote.events.map((e) => e.messageId));
   const newEvents = incoming.filter((e) => !existingIds.has(e.messageId));

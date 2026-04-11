@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   createEmptyDocument,
   mergeEvents,
@@ -56,10 +56,13 @@ describe('StarfishEventMapper', () => {
     });
 
     it('updates lastUpdated timestamp', () => {
+      vi.useFakeTimers();
       const doc = createEmptyDocument();
       const before = doc.lastUpdated;
+      vi.advanceTimersByTime(1);
       const merged = mergeEvents(doc, [makeEvent('x', '2024-01-01T00:00:00.000Z')]);
       expect(merged.lastUpdated).not.toBe(before);
+      vi.useRealTimers();
     });
   });
 
