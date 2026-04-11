@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `useLinkingUtmCapture(client)` — hook backed by React Native's `Linking` API; handles both cold-start attribution (`getInitialURL`) and re-attribution when a new deep link arrives while the app is open (`addEventListener('url', ...)`)
   - `useExpoRouterUtmCapture(client)` — hook backed by Expo Router's `useGlobalSearchParams()`; works from the root `_layout.tsx` and re-captures whenever the URL params change (new campaign links)
 
+### Fixed
+
+- **`captureDeepLinkUtmParams`** (`@sunglasses/react-native`): strip `#` fragment before passing query string to `URLSearchParams` — without this, `utm_campaign=sale#hero` was stored as `"sale#hero"` instead of `"sale"`
+- **`useExpoRouterUtmCapture`** (`@sunglasses/react-native`): import `UTM_PARAMS` from `captureDeepLinkUtmParams` instead of re-declaring — eliminates silent divergence risk if params are ever updated in one place but not the other
+- **`useExpoRouterUtmCapture`** (`@sunglasses/react-native`): removed `eslint-disable-next-line react-hooks/rules-of-hooks` comment — the `react-hooks` ESLint plugin is not installed in this package; the comment caused `pnpm lint` to exit 1 in CI
+
 ## [0.2.0] — 2026-04-11
 
 ### Added
