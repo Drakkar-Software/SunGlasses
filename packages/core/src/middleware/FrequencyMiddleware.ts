@@ -48,9 +48,10 @@ export interface FrequencyMiddlewareOptions {
  * });
  * ```
  *
- * Note: counts reflect the state BEFORE this event is counted (EventCounter.increment
- * is called from SunglassesCore before the middleware runs, so the attached count
- * already includes the current event).
+ * Note: counts reflect the state BEFORE this event is counted. EventCounter.increment
+ * is called from SunglassesCore AFTER the middleware pipeline completes, so the
+ * attached count does NOT yet include the current event (e.g. a `$count_all_time`
+ * of 4 means this is the 5th occurrence — the counter will be 5 after enqueue).
  */
 export class FrequencyMiddleware implements IMiddleware {
   readonly name = 'FrequencyMiddleware';

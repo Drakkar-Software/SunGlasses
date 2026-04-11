@@ -76,8 +76,12 @@ export class IdentityManager {
   /**
    * Link current session to a known user.
    * @param userId — the raw user identifier (hashed if anonymizeUserId=true)
+   * @throws if userId is empty or whitespace-only
    */
   async identify(userId: string): Promise<string> {
+    if (!userId || userId.trim().length === 0) {
+      throw new Error('IdentityManager: userId cannot be empty');
+    }
     const resolvedId = this.anonymizeUserId ? await sha256Hex(userId) : userId;
     this.distinctId = resolvedId;
     try {

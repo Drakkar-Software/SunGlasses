@@ -2,10 +2,14 @@ import { ConsentManager } from './ConsentManager.js';
 import { EventCounter } from './EventCounter.js';
 import { EventQueue } from './EventQueue.js';
 import { IdentityManager } from './IdentityManager.js';
+import { LocalEventArchive } from './LocalEventArchive.js';
 import { MiddlewarePipeline } from './MiddlewarePipeline.js';
 import { PiiSanitizer } from './PiiSanitizer.js';
+import { SessionManager } from './SessionManager.js';
+import { TraitManager } from './TraitManager.js';
 import type {
   CleanupConfig,
+  ConsentHistoryEntry,
   ConsentStatus,
   EventContext,
   EventCountPeriod,
@@ -15,6 +19,7 @@ import type {
   ISunglassesClient,
   SunglassesConfig,
   SunglassesEvent,
+  UserDataExport,
 } from './types.js';
 import { createLogger } from './utils/logger.js';
 import { nowISO } from './utils/timestamp.js';
@@ -26,6 +31,7 @@ const LIBRARY_VERSION = '0.1.0';
 const DEFAULT_FLUSH_INTERVAL = 30_000;
 const DEFAULT_MAX_QUEUE_SIZE = 500;
 const DEFAULT_MAX_BATCH_SIZE = 50;
+const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1_000; // 30 min
 
 /**
  * Core SDK engine. Platform-agnostic implementation of ISunglassesClient.
@@ -42,6 +48,9 @@ export class SunglassesCore implements ISunglassesClient {
   private readonly adapters: IAnalyticsAdapter[];
   private readonly _eventCounter: EventCounter | null;
   private readonly cleanupConfig: CleanupConfig | null;
+  private readonly sessionManager: SessionManager | null;
+  private readonly traitManager: TraitManager;
+  private readonly localArchive: LocalEventArchive | null;
   private readonly config: Required<
     Pick<
       SunglassesConfig,
@@ -69,7 +78,10 @@ export class SunglassesCore implements ISunglassesClient {
     identity: IdentityManager,
     queue: EventQueue,
     pipeline: MiddlewarePipeline,
-    eventCounter: EventCounter | null
+    eventCounter: EventCounter | null,
+    sessionManager: SessionManager | null,
+    traitManager: TraitManager,
+    localArchive: LocalEventArchive | null
   ) {
     this.config = {
       defaultOptIn: config.defaultOptIn ?? false,
@@ -91,6 +103,9 @@ export class SunglassesCore implements ISunglassesClient {
     this.adapters = config.adapters;
     this._eventCounter = eventCounter;
     this.cleanupConfig = config.cleanupAfterFlush ?? null;
+    this.sessionManager = sessionManager;
+    this.traitManager = traitManager;
+    this.localArchive = localArchive;
   }
 
   /**
@@ -125,19 +140,46 @@ export class SunglassesCore implements ISunglassesClient {
       ? new EventCounter(config.storage, logger)
       : null;
 
+    // Optional session tracking
+    const sessionManager = config.enableSessionTracking
+      ? new SessionManager(
+          config.storage,
+          logger,
+          config.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS
+        )
+      : null;
+
+    // Trait manager — always active
+    const traitManager = new TraitManager(config.storage, logger);
+
+    // Optional local event archive
+    const localArchive = config.enableLocalArchive
+      ? new LocalEventArchive(config.storage, logger)
+      : null;
+
     const instance = new SunglassesCore(
       config,
       consent,
       identity,
       queue,
       pipeline,
-      eventCounter
+      eventCounter,
+      sessionManager,
+      traitManager,
+      localArchive
     );
 
     // Initialize subsystems
-    await consent.initialize(config.defaultOptIn ?? false);
+    await consent.initialize(config.defaultOptIn ?? false, config.consentPolicyVersion);
     await identity.initialize();
     await queue.initialize();
+    await traitManager.initialize();
+    if (sessionManager) {
+      await sessionManager.initialize();
+    }
+    if (localArchive) {
+      await localArchive.initialize();
+    }
 
     // Start auto-flush timer
     if (!(config.disabled ?? false)) {
@@ -149,6 +191,8 @@ export class SunglassesCore implements ISunglassesClient {
       defaultOptIn: config.defaultOptIn ?? false,
       consentStatus: consent.status,
       eventCounting: config.enableEventCounting ?? false,
+      sessionTracking: config.enableSessionTracking ?? false,
+      localArchive: config.enableLocalArchive ?? false,
     });
 
     return instance;
@@ -169,6 +213,11 @@ export class SunglassesCore implements ISunglassesClient {
 
   identify(userId: string, traits?: Record<string, unknown>): void {
     if (!this.canCapture()) return;
+
+    // Store traits in TraitManager (fire-and-forget — does not block)
+    if (traits && Object.keys(traits).length > 0) {
+      this.traitManager.setTraits(traits).catch(() => {});
+    }
 
     // Perform async identity update without blocking the call
     this.identity
@@ -195,6 +244,10 @@ export class SunglassesCore implements ISunglassesClient {
   async reset(): Promise<void> {
     await this.identity.reset();
     await this.queue.clear();
+    await this.traitManager.clearTraits();
+    if (this.sessionManager) {
+      await this.sessionManager.end();
+    }
     for (const adapter of this.adapters) {
       await adapter.reset?.();
     }
@@ -223,6 +276,10 @@ export class SunglassesCore implements ISunglassesClient {
 
   getConsentStatus(): ConsentStatus {
     return this.consent.status;
+  }
+
+  getConsentHistory(): ConsentHistoryEntry[] {
+    return this.consent.getHistory();
   }
 
   async flush(): Promise<void> {
@@ -263,6 +320,63 @@ export class SunglassesCore implements ISunglassesClient {
     return this.queue.size;
   }
 
+  // ── Local event archive ────────────────────────────────────────────────────
+
+  /**
+   * Prune the local event archive by age/count, or clear it entirely.
+   * Pass `{}` to clear all archived events.
+   * No-op when `enableLocalArchive` was not set in config.
+   */
+  async clearLocalArchive(config: CleanupConfig = {}): Promise<void> {
+    if (!this.localArchive) return;
+    if (
+      config.maxAgeMs === undefined &&
+      config.maxEventsPerIdentity === undefined
+    ) {
+      await this.localArchive.clear();
+    } else {
+      await this.localArchive.cleanup(config);
+    }
+  }
+
+  // ── Data portability ───────────────────────────────────────────────────────
+
+  /**
+   * Export all locally held user data as a machine-readable object.
+   * GDPR Article 20 — right to data portability.
+   */
+  async exportUserData(): Promise<UserDataExport> {
+    const identityState = this.identity.getState();
+
+    // Build event count summary if counting is enabled
+    const eventCountSummary: UserDataExport['eventCountSummary'] = {};
+    if (this._eventCounter) {
+      const queuedEvents = this.queue.peek(this.config.maxQueueSize);
+      const eventNames = [...new Set(queuedEvents.map((e) => e.event))];
+      for (const name of eventNames) {
+        const [daily, weekly, monthly, allTime] = await Promise.all([
+          this._eventCounter.getCount(name, 'daily'),
+          this._eventCounter.getCount(name, 'weekly'),
+          this._eventCounter.getCount(name, 'monthly'),
+          this._eventCounter.getCount(name, 'all-time'),
+        ]);
+        eventCountSummary[name] = { daily, weekly, monthly, 'all-time': allTime };
+      }
+    }
+
+    return {
+      exportedAt: nowISO(),
+      anonymousId: identityState.anonymousId,
+      distinctId: identityState.distinctId,
+      consentStatus: this.consent.status,
+      consentHistory: this.consent.getHistory(),
+      traits: this.traitManager.getTraits(),
+      queuedEvents: this.queue.peek(this.config.maxQueueSize),
+      archivedEvents: this.localArchive ? this.localArchive.getAll() : [],
+      eventCountSummary,
+    };
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────────
 
   private canCapture(): boolean {
@@ -280,6 +394,17 @@ export class SunglassesCore implements ISunglassesClient {
     if (!this.canCapture()) return;
 
     const identityState = this.identity.getState();
+
+    // Session management — get or create session, detect new sessions
+    let sessionId: string | undefined;
+    let isNewSession = false;
+    if (this.sessionManager) {
+      const before = this.sessionManager.sessionId;
+      const session = this.sessionManager.getOrCreate();
+      sessionId = session.sessionId;
+      isNewSession = before === null && session.eventCount === 0;
+    }
+
     const event: SunglassesEvent = {
       type,
       event: eventName,
@@ -288,12 +413,18 @@ export class SunglassesCore implements ISunglassesClient {
       timestamp: nowISO(),
       messageId: generateUUID(),
       properties: properties ?? {},
-      context: this.buildContext(),
+      context: this.buildContext(sessionId),
     };
 
     // Increment event counter (fire-and-forget — never blocks capture)
     if (this._eventCounter && type === 'capture') {
       this._eventCounter.increment(eventName).catch(() => {});
+    }
+
+    // Emit a $session_start synthetic event when a new session begins
+    // (before the actual event, so ordering is correct in the queue)
+    if (isNewSession) {
+      this.emitSessionStart(sessionId!);
     }
 
     // Run through middleware pipeline asynchronously
@@ -302,6 +433,10 @@ export class SunglassesCore implements ISunglassesClient {
       .then((processed) => {
         if (processed !== null) {
           this.queue.enqueue(processed);
+          // Write to permanent local archive (if enabled)
+          this.localArchive?.append([processed]).catch(() => {});
+          // Touch the session to update lastActiveAt + reset idle timer
+          this.sessionManager?.touch();
           // Trigger immediate flush if batch threshold reached
           if (this.queue.size >= this.config.maxBatchSize) {
             this.flushOnce().catch(() => {});
@@ -313,7 +448,29 @@ export class SunglassesCore implements ISunglassesClient {
       });
   }
 
-  private buildContext(): EventContext {
+  private emitSessionStart(sessionId: string): void {
+    const identityState = this.identity.getState();
+    const event: SunglassesEvent = {
+      type: 'capture',
+      event: '$session_start',
+      distinctId: this.identity.getEffectiveDistinctId(),
+      anonymousId: identityState.anonymousId,
+      timestamp: nowISO(),
+      messageId: generateUUID(),
+      properties: { $session_id: sessionId },
+      context: this.buildContext(sessionId),
+    };
+    this.pipeline
+      .run(event)
+      .then((processed) => {
+        if (processed !== null) {
+          this.queue.enqueue(processed);
+        }
+      })
+      .catch(() => {});
+  }
+
+  private buildContext(sessionId?: string): EventContext {
     const ctx: EventContext = {
       library: { name: LIBRARY_NAME, version: LIBRARY_VERSION },
       platform: this.config.platform,
@@ -325,6 +482,16 @@ export class SunglassesCore implements ISunglassesClient {
         version: this.config.appVersion || undefined,
         build: this.config.appBuild || undefined,
       };
+    }
+
+    if (sessionId !== undefined) {
+      ctx.sessionId = sessionId;
+    }
+
+    // Attach persisted traits (forwarded to backends for user segmentation)
+    const traits = this.traitManager.getTraits();
+    if (Object.keys(traits).length > 0) {
+      ctx.traits = traits;
     }
 
     return ctx;
@@ -370,7 +537,7 @@ export class SunglassesCore implements ISunglassesClient {
         // Post-flush cleanup (optional, fire-and-forget per adapter)
         if (this.cleanupConfig) {
           for (const adapter of this.adapters) {
-            adapter.cleanupAfterFlush?.(safeBatch, this.cleanupConfig).catch(() => {});
+            adapter.cleanupAfterFlush?.(safeBatch, this.cleanupConfig)?.catch(() => {});
           }
         }
       }

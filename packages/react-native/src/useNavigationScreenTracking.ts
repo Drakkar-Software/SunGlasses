@@ -64,11 +64,11 @@ export function useNavigationScreenTracking(
       clientRef.current.screen(name, { $route: routeName });
     };
 
-    // Track initial screen when navigation is ready
-    const readyListener = ref.addListener('state', handleStateChange);
+    // Listen to navigation state changes to track the active screen
+    const stateListener = ref.addListener('state', handleStateChange);
 
     return () => {
-      readyListener.remove();
+      stateListener.remove();
     };
   }, [navigationRef, options.screenNameMapper]);
 }

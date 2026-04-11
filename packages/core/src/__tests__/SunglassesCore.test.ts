@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SunglassesCore } from '../SunglassesCore.js';
 import type { IAnalyticsAdapter, IStorageAdapter } from '../types.js';
 
@@ -27,6 +27,11 @@ function makeAdapter(): IAnalyticsAdapter & {
 describe('SunglassesCore', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   it('throws if no adapters are provided', async () => {
@@ -74,7 +79,7 @@ describe('SunglassesCore', () => {
     await client.optIn();
     client.capture('test_event', { foo: 'bar' });
     // Pipeline is async — allow microtasks to settle
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     expect(client.getQueuedEventCount()).toBe(1);
   });
 
@@ -85,7 +90,7 @@ describe('SunglassesCore', () => {
       defaultOptIn: true,
     });
     client.capture('event_a');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     expect(client.getQueuedEventCount()).toBe(1);
     await client.optOut();
     expect(client.getQueuedEventCount()).toBe(0);
@@ -99,7 +104,7 @@ describe('SunglassesCore', () => {
       defaultOptIn: true,
     });
     client.capture('button_clicked');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     await client.flush();
     expect(adapter.batches.length).toBe(1);
     expect(client.getQueuedEventCount()).toBe(0);
@@ -114,7 +119,7 @@ describe('SunglassesCore', () => {
       maxBatchSize: 100,
     });
     client.capture('event_1');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
 
     // Fire two concurrent flushes
     const [, ] = await Promise.all([client.flush(), client.flush()]);
@@ -131,7 +136,7 @@ describe('SunglassesCore', () => {
       defaultOptIn: true,
     });
     client.capture('event_1');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     await client.flush();
     // Event must still be in queue (adapter failed → not removed)
     expect(client.getQueuedEventCount()).toBe(1);
@@ -152,7 +157,7 @@ describe('SunglassesCore', () => {
       defaultOptIn: true,
     });
     client.capture('safe_event');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     await client.flush();
     // Queue should still have 0 events (sent successfully)
     expect(receivedBatch).not.toBeNull();
@@ -168,7 +173,7 @@ describe('SunglassesCore', () => {
       disabled: true,
     });
     client.capture('test');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     await client.flush();
     expect(adapter.batches.length).toBe(0);
   });
@@ -182,7 +187,7 @@ describe('SunglassesCore', () => {
       defaultOptIn: true,
     });
     client.capture('event_before_reset');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     await client.reset();
     expect(client.getQueuedEventCount()).toBe(0);
     expect(resetFn).toHaveBeenCalledOnce();
@@ -199,7 +204,7 @@ describe('SunglassesCore', () => {
     client.capture('button_clicked');
     client.capture('button_clicked');
     client.capture('page_viewed');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     expect(await client.getEventCount('button_clicked', 'all-time')).toBe(2);
     expect(await client.getEventCount('page_viewed', 'all-time')).toBe(1);
   });
@@ -212,7 +217,7 @@ describe('SunglassesCore', () => {
       enableEventCounting: false,
     });
     client.capture('anything');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     expect(await client.getEventCount('anything', 'all-time')).toBe(0);
   });
 
@@ -229,10 +234,10 @@ describe('SunglassesCore', () => {
       cleanupAfterFlush: { maxAgeMs: 86_400_000 },
     });
     client.capture('event');
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     await client.flush();
     // cleanupAfterFlush is fire-and-forget; allow microtasks
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     expect(cleanupFn).toHaveBeenCalled();
   });
 });

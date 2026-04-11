@@ -73,7 +73,11 @@ export function pruneDocument(
   // Step 1: age-based pruning
   if (config.maxAgeMs !== undefined && config.maxAgeMs > 0) {
     const cutoff = Date.now() - config.maxAgeMs;
-    events = events.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
+    events = events.filter((e) => {
+      const ts = new Date(e.timestamp).getTime();
+      // Drop events with malformed timestamps (NaN) and those older than cutoff
+      return !Number.isNaN(ts) && ts >= cutoff;
+    });
   }
 
   // Step 2: count-based pruning (keep most recent N)

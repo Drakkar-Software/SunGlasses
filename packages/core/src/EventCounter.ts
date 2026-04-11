@@ -19,6 +19,20 @@ const KEY_PREFIX = 'sunglasses:count';
  * Designed to be written from the enqueue hot path — must not throw.
  */
 export class EventCounter implements IEventCounter {
+  /**
+   * In-memory cache of counts keyed by storage key.
+   * Updated synchronously on increment so getCount() can return immediately
+   * without waiting for storage writes to complete.
+   */
+  private readonly cache = new Map<string, number>();
+
+  /**
+   * Tracks all storage keys written during this session.
+   * Used to reliably clear an event's timed buckets on reset(),
+   * even when they fall outside the 90-day sweep window.
+   */
+  private readonly writtenKeys = new Set<string>();
+
   constructor(
     private readonly storage: IStorageAdapter,
     private readonly logger: Logger
@@ -34,11 +48,20 @@ export class EventCounter implements IEventCounter {
 
   async getCount(eventName: string, period: EventCountPeriod, date: Date = new Date()): Promise<number> {
     const key = this.storageKey(eventName, period, date);
+
+    // Return in-memory value first (reflects increments from this session
+    // before they've been written to storage).
+    const cached = this.cache.get(key);
+    if (cached !== undefined) return cached;
+
+    // Fall back to storage for counts from previous sessions.
     try {
       const raw = await this.storage.read(key);
       if (raw === null) return 0;
       const n = parseInt(raw, 10);
-      return Number.isNaN(n) ? 0 : n;
+      const count = Number.isNaN(n) ? 0 : n;
+      this.cache.set(key, count);
+      return count;
     } catch (err) {
       this.logger.warn('EventCounter: failed to read count', err);
       return 0;
@@ -57,13 +80,50 @@ export class EventCounter implements IEventCounter {
       // Clear all periods and all conceivable recent buckets for this event
       await this.clearEvent(eventName);
     } else {
-      this.logger.warn(
-        'EventCounter.reset(): resetting all events requires enumerating storage keys ' +
-        '— only the all-time key is cleared. Timed buckets will naturally expire.'
-      );
-      // We cannot enumerate all keys without a listKeys() on IStorageAdapter.
-      // For all-time we can clear by known key pattern — we can't enumerate daily/monthly keys.
-      // This is a documented limitation.
+      // Clear every key we have written during this session, then sweep
+      // the last 90 days for any events from previous sessions.
+      const allKeys = [...this.writtenKeys];
+      for (const key of allKeys) {
+        try {
+          await this.storage.delete(key);
+        } catch {
+          // ignore
+        }
+        this.writtenKeys.delete(key);
+        this.cache.delete(key);
+      }
+
+      // Sweep last 90 days to catch cross-session keys not in writtenKeys
+      const now = new Date();
+      const seenKeys = new Set<string>(allKeys);
+      const periods: EventCountPeriod[] = ['daily', 'weekly', 'monthly', 'all-time'];
+
+      for (let i = 0; i < 90; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+
+        // Extract unique event names from known written keys
+        // (format: sunglasses:count:{period}:{bucket}:{eventName})
+        const eventNames = new Set<string>(
+          allKeys.map((k) => k.split(':').pop()!).filter(Boolean)
+        );
+
+        for (const name of eventNames) {
+          for (const period of periods) {
+            const key = this.storageKey(name, period, d);
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key);
+              try {
+                await this.storage.delete(key);
+              } catch {
+                // ignore
+              }
+            }
+          }
+        }
+      }
+
+      this.logger.debug('EventCounter.reset(): cleared all tracked event counters');
     }
   }
 
@@ -75,27 +135,44 @@ export class EventCounter implements IEventCounter {
     date: Date
   ): Promise<void> {
     const key = this.storageKey(eventName, period, date);
+    // Track every key we write so reset() can reliably clear them
+    this.writtenKeys.add(key);
+
+    // Update cache synchronously so getCount() reflects the new value immediately
+    const currentCached = this.cache.get(key) ?? 0;
+    const next = currentCached + 1;
+    this.cache.set(key, next);
+
+    // Persist asynchronously (best-effort)
     try {
-      const raw = await this.storage.read(key);
-      const current = raw !== null ? parseInt(raw, 10) : 0;
-      const next = (Number.isNaN(current) ? 0 : current) + 1;
       await this.storage.write(key, String(next));
     } catch (err) {
-      this.logger.warn('EventCounter: failed to increment count', err);
+      this.logger.warn('EventCounter: failed to persist count', err);
     }
   }
 
   private async clearEvent(eventName: string): Promise<void> {
-    // Clear all-time key unconditionally
-    try {
-      await this.storage.delete(this.storageKey(eventName, 'all-time', new Date()));
-    } catch {
-      // ignore
+    const safeEvent = eventName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+
+    // First pass: delete any in-session key we know about for this event.
+    // This reliably clears buckets from ANY date, including old ones.
+    const sessionKeys = [...this.writtenKeys].filter((k) =>
+      k.endsWith(`:${safeEvent}`)
+    );
+    for (const key of sessionKeys) {
+      try {
+        await this.storage.delete(key);
+      } catch {
+        // ignore
+      }
+      this.writtenKeys.delete(key);
+      this.cache.delete(key);
     }
 
-    // Clear recent timed buckets (last 90 days covers daily/weekly/monthly)
+    // Second pass: sweep the last 90 days to catch any buckets written in a
+    // previous session (session-key tracking only covers the current run).
     const now = new Date();
-    const seenBuckets = new Set<string>();
+    const seenBuckets = new Set<string>(sessionKeys);
 
     for (let i = 0; i < 90; i++) {
       const d = new Date(now);
@@ -113,6 +190,13 @@ export class EventCounter implements IEventCounter {
           }
         }
       }
+    }
+
+    // Always delete the all-time key last (it doesn't depend on a date bucket)
+    try {
+      await this.storage.delete(this.storageKey(eventName, 'all-time', new Date()));
+    } catch {
+      // ignore
     }
   }
 

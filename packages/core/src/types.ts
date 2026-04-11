@@ -28,8 +28,12 @@ export interface IStorageAdapter {
  * Implementations: HttpStorageAdapter, StarfishAnalyticsAdapter, console (debug).
  */
 export interface IAnalyticsAdapter {
-  /** Deliver a batch of events. Must NOT mutate the input array. */
-  send(batch: SunglassesEvent[]): Promise<void>;
+  /**
+   * Deliver a batch of events. Must NOT mutate the input array.
+   * The array is `ReadonlyArray` to enforce this at the type level;
+   * at runtime it is also `Object.freeze`'d by `SunglassesCore`.
+   */
+  send(batch: ReadonlyArray<SunglassesEvent>): Promise<void>;
   /** Called on identity reset — adapter may clear remote session. */
   reset?(): Promise<void>;
   /** Called on SDK shutdown — adapter should flush pending work. */
@@ -39,7 +43,7 @@ export interface IAnalyticsAdapter {
    * Use this to archive or remove old events from the remote store.
    * Implement this in adapters that accumulate data (e.g. StarfishAnalyticsAdapter).
    */
-  cleanupAfterFlush?(delivered: SunglassesEvent[], config: CleanupConfig): Promise<void>;
+  cleanupAfterFlush?(delivered: ReadonlyArray<SunglassesEvent>, config: CleanupConfig): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +93,10 @@ export interface EventContext {
   device?: { type?: string; os?: string };
   screen?: { width?: number; height?: number };
   locale?: string;
+  /** Current session ID. Present when enableSessionTracking is true. */
+  sessionId?: string;
+  /** Persisted user traits set via identify(). Forwarded to backends for segmentation. */
+  traits?: Record<string, unknown>;
 }
 
 /**
@@ -127,10 +135,24 @@ export interface IdentityState {
 
 export type ConsentStatus = 'opted-in' | 'opted-out' | 'unknown';
 
+/**
+ * A single entry in the consent audit trail.
+ */
+export interface ConsentHistoryEntry {
+  status: ConsentStatus;
+  /** Privacy policy version in effect when this change was recorded. */
+  policyVersion?: string;
+  timestamp: string;
+}
+
 export interface ConsentState {
   status: ConsentStatus;
   /** ISO-8601 timestamp of last status change, or null on first run. */
   updatedAt: string | null;
+  /** Policy version when consent was last given/revoked. */
+  policyVersion?: string;
+  /** Audit trail of consent changes. Capped at 10 entries. */
+  history?: ConsentHistoryEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +222,38 @@ export interface SunglassesConfig {
    * to events automatically.
    */
   enableEventCounting?: boolean;
+
+  // ── Session tracking ──────────────────────────────────────────────────────
+  /**
+   * When true, a session ID is generated and attached to every event's context.
+   * Sessions expire after `sessionIdleTimeoutMs` of inactivity.
+   */
+  enableSessionTracking?: boolean;
+  /** Idle timeout before a new session is started. Default: 1_800_000 (30 min). */
+  sessionIdleTimeoutMs?: number;
+
+  // ── Consent versioning ────────────────────────────────────────────────────
+  /**
+   * If provided, the SDK checks whether stored consent was given for this policy
+   * version. If the stored version differs, consent is reset to 'unknown' so the
+   * user is prompted again. Useful when your privacy policy changes.
+   */
+  consentPolicyVersion?: string;
+
+  // ── Local event archive ───────────────────────────────────────────────────
+  /**
+   * When true, every event that passes the middleware pipeline is also written
+   * to a permanent local archive (`sunglasses:archive` in IStorageAdapter).
+   *
+   * Unlike the EventQueue, the archive is **never cleared automatically** after
+   * a flush — events persist until `client.clearLocalArchive()` is called.
+   *
+   * Use cases:
+   * - Keep a full local history for GDPR data portability
+   * - Re-sync a remote store from scratch after a failure
+   * - Offline-first: accumulate events even if all adapters are down
+   */
+  enableLocalArchive?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +306,27 @@ export interface ISunglassesClient {
 
   /** Expose the current queue length (e.g. for UI indicators). */
   getQueuedEventCount(): number;
+
+  // ── Consent history ───────────────────────────────────────────────────────
+  /** Returns the audit trail of consent changes (most recent last). */
+  getConsentHistory(): ConsentHistoryEntry[];
+
+  // ── Local event archive ───────────────────────────────────────────────────
+  /**
+   * Prune archived events by age / count, or clear them entirely.
+   * No-op if `enableLocalArchive` was not set in config.
+   *
+   * @param config — pass an empty object `{}` to clear everything
+   */
+  clearLocalArchive(config?: CleanupConfig): Promise<void>;
+
+  // ── Data portability ──────────────────────────────────────────────────────
+  /**
+   * Export all locally held user data as a structured object.
+   * GDPR Article 20 — right to data portability.
+   * No network calls — reads only from in-memory subsystem state.
+   */
+  exportUserData(): Promise<UserDataExport>;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +401,104 @@ export interface StarfishAdapterConfig {
   authToken?: string;
   /** Max retries on 409 Conflict (optimistic locking). Default: 3. */
   maxRetries?: number;
+  /**
+   * When true, each successful push creates a **new** Starfish document using
+   * a rotating path suffix (e.g. `events-0001`, `events-0002`…).
+   *
+   * Benefits:
+   * - No pull step needed — each push is always a fresh document
+   * - No growing single document — each file stays small
+   * - Old documents accumulate on Starfish (combine with `cleanupAfterFlush` to prune)
+   *
+   * Requires `pathStorage` to persist the current path generation counter.
+   * Works best with `enableLocalArchive: true` in `SunglassesConfig` so the
+   * complete event history is kept locally even across many push generations.
+   */
+  rotatePathOnSuccess?: boolean;
+  /**
+   * Storage adapter used to persist the current path generation counter.
+   * Required when `rotatePathOnSuccess: true`.
+   * Can be the same adapter as `SunglassesConfig.storage`.
+   */
+  pathStorage?: IStorageAdapter;
+}
+
+// ---------------------------------------------------------------------------
+// Session tracking
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory + persisted session state.
+ * Session IDs are random UUIDs — they never contain PII.
+ */
+export interface SessionState {
+  sessionId: string;
+  startedAt: string;
+  lastActiveAt: string;
+  eventCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Data portability (GDPR Article 20)
+// ---------------------------------------------------------------------------
+
+/**
+ * Machine-readable snapshot of all user data held locally by the SDK.
+ * Returned by `client.exportUserData()`.
+ */
+export interface UserDataExport {
+  exportedAt: string;
+  anonymousId: string;
+  distinctId: string | null;
+  consentStatus: ConsentStatus;
+  consentHistory: ConsentHistoryEntry[];
+  /** Persisted user traits set via identify(). */
+  traits: Record<string, unknown>;
+  /** Events that have been queued but not yet delivered to any adapter. */
+  queuedEvents: SunglassesEvent[];
+  /**
+   * All events in the local archive.
+   * Only populated when `enableLocalArchive: true`.
+   */
+  archivedEvents: SunglassesEvent[];
+  /**
+   * Summary of event counts per period.
+   * Only populated when `enableEventCounting: true`.
+   */
+  eventCountSummary: {
+    [eventName: string]: Partial<Record<EventCountPeriod, number>>;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Type-safe event catalog
+// ---------------------------------------------------------------------------
+
+/**
+ * A map of event name → required properties shape.
+ * Use with `asTyped<MyEventMap>(client)` to get compile-time checked `capture()`.
+ *
+ * @example
+ * type MyEvents = {
+ *   button_clicked: { buttonId: string; screen: string };
+ *   purchase_completed: { itemId: string; amount: number };
+ *   page_viewed: undefined; // no required properties
+ * };
+ */
+export type EventMap = Record<string, Record<string, unknown> | undefined>;
+
+/**
+ * Typed wrapper around ISunglassesClient.
+ * Provides compile-time checking of event names and their property shapes.
+ * Zero runtime cost — use `asTyped<T>(client)` to obtain one.
+ */
+export interface ISunglassesTypedClient<T extends EventMap> extends ISunglassesClient {
+  capture<K extends keyof T & string>(
+    eventName: K,
+    ...args: T[K] extends undefined
+      ? [properties?: Record<string, unknown>]
+      : [properties: T[K]]
+  ): void;
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,12 @@ export { ConsentManager } from './ConsentManager.js';
 export { IdentityManager } from './IdentityManager.js';
 export { EventQueue } from './EventQueue.js';
 export { EventCounter } from './EventCounter.js';
+export { SessionManager } from './SessionManager.js';
+export { TraitManager } from './TraitManager.js';
+export { LocalEventArchive } from './LocalEventArchive.js';
+
+// Type-safe event catalog utility
+export { asTyped } from './asTyped.js';
 
 // All public types & interfaces
 export type {
@@ -24,6 +30,7 @@ export type {
   IMiddleware,
   MiddlewareNext,
   ISunglassesClient,
+  ISunglassesTypedClient,
   SunglassesConfig,
   SunglassesEvent,
   EventType,
@@ -31,12 +38,16 @@ export type {
   IdentityState,
   ConsentStatus,
   ConsentState,
+  ConsentHistoryEntry,
   CleanupConfig,
   HttpAdapterConfig,
   StarfishAdapterConfig,
   ScreenTrackingOptions,
   EventCountPeriod,
   IEventCounter,
+  SessionState,
+  UserDataExport,
+  EventMap,
 } from './types.js';
 
 // Utilities (exported for adapter authors)

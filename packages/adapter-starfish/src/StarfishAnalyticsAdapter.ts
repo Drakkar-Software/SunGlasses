@@ -1,6 +1,7 @@
 import type {
   CleanupConfig,
   IAnalyticsAdapter,
+  IStorageAdapter,
   StarfishAdapterConfig,
   SunglassesEvent,
 } from '@sunglasses/core';
@@ -15,6 +16,9 @@ import {
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
+/** Storage key prefix for per-identity path generation counters. */
+const GEN_KEY_PREFIX = 'sunglasses:starfish:gen:';
+
 interface PullResponse {
   data: StarfishEventDocument;
   hash: string;
@@ -23,12 +27,21 @@ interface PullResponse {
 /**
  * IAnalyticsAdapter that syncs events to a Starfish document-sync server.
  *
- * Protocol:
+ * ## Standard mode (default)
+ * Protocol: pull → merge → push with optimistic locking.
  * 1. GET  /pull/{path}  → { data: StarfishEventDocument, hash: string }
  * 2. Merge incoming events into the document (dedup by messageId)
  * 3. POST /push/{path}  → { data: updatedDoc, baseHash: hash }
  * 4. On 409 Conflict (optimistic locking): pull again, re-merge, re-push
  *    (iterative, not recursive, to prevent stack overflow under high contention)
+ *
+ * ## Rotating path mode (`rotatePathOnSuccess: true`)
+ * Each successful push creates a **new** Starfish document with an
+ * auto-incrementing path suffix (e.g. `events-0001`, `events-0002`…).
+ * - No pull step needed — the new document only contains this batch's events
+ * - No growing single document — each file stays small
+ * - Requires `pathStorage` in config to persist the generation counter
+ * - Combine with `enableLocalArchive: true` to keep a local copy of all events
  *
  * The storage path template supports `{identity}` as a placeholder, replaced
  * with `distinctId ?? anonymousId` from the first event in the batch.
@@ -41,6 +54,8 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
   private readonly authToken: string;
   private readonly maxRetries: number;
   private readonly timeoutMs: number;
+  private readonly rotatePathOnSuccess: boolean;
+  private readonly pathStorage: IStorageAdapter | null;
 
   constructor(config: StarfishAdapterConfig & { timeoutMs?: number }) {
     this.serverUrl = config.serverUrl.replace(/\/$/, '');
@@ -48,15 +63,77 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
     this.authToken = config.authToken ?? '';
     this.maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.timeoutMs = config.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.rotatePathOnSuccess = config.rotatePathOnSuccess ?? false;
+    this.pathStorage = config.pathStorage ?? null;
+
+    if (this.rotatePathOnSuccess && !this.pathStorage) {
+      console.warn(
+        '[SunGlasses] StarfishAnalyticsAdapter: rotatePathOnSuccess requires pathStorage — falling back to standard mode'
+      );
+    }
   }
 
-  async send(batch: SunglassesEvent[]): Promise<void> {
+  async send(batch: ReadonlyArray<SunglassesEvent>): Promise<void> {
     if (batch.length === 0) return;
 
-    // Resolve identity from the first event in the batch
     const identity = batch[0].distinctId || batch[0].anonymousId;
+    const baseResolved = resolveStoragePath(this.storagePath, identity);
+
+    if (this.rotatePathOnSuccess && this.pathStorage) {
+      return this.sendRotating(batch, identity, baseResolved);
+    }
+
+    return this.sendMerge(batch, baseResolved);
+  }
+
+  async reset(): Promise<void> {
+    // No remote session to clear (document persists independently)
+  }
+
+  async shutdown(): Promise<void> {
+    // No pending work (events are synced synchronously in send())
+  }
+
+  /**
+   * Prune old events from the Starfish document after a successful flush.
+   * Called by SunglassesCore when `cleanupAfterFlush` is configured.
+   * Only applicable in standard (non-rotating) mode.
+   */
+  async cleanupAfterFlush(
+    delivered: ReadonlyArray<SunglassesEvent>,
+    config: CleanupConfig
+  ): Promise<void> {
+    if (delivered.length === 0) return;
+    if (this.rotatePathOnSuccess) return; // Rotating mode: old docs stay as-is
+
+    const identity = delivered[0].distinctId || delivered[0].anonymousId;
     const path = resolveStoragePath(this.storagePath, identity);
 
+    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      try {
+        const pulled = await this.pull(path);
+        if (!pulled) return; // Nothing to clean up
+
+        const pruned = pruneDocument(pulled.data, config);
+        const pushResponse = await this.push(path, pruned, pulled.hash);
+
+        if (pushResponse.status === 409) {
+          continue; // Retry on conflict
+        }
+        return;
+      } catch {
+        if (attempt === this.maxRetries - 1) {
+          console.warn(
+            '[SunGlasses] StarfishAnalyticsAdapter: cleanup failed — will retry on next flush'
+          );
+        }
+      }
+    }
+  }
+
+  // ── Private: standard pull-merge-push ──────────────────────────────────────
+
+  private async sendMerge(batch: ReadonlyArray<SunglassesEvent>, path: string): Promise<void> {
     // Iterative retry loop — avoids recursive stack growth under high contention
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
       try {
@@ -101,48 +178,69 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
     );
   }
 
-  async reset(): Promise<void> {
-    // No remote session to clear (document persists independently)
-  }
-
-  async shutdown(): Promise<void> {
-    // No pending work (events are synced synchronously in send())
-  }
+  // ── Private: rotating path mode ────────────────────────────────────────────
 
   /**
-   * Prune old events from the Starfish document after a successful flush.
-   * Called by SunglassesCore when `cleanupAfterFlush` is configured.
+   * Push events to a new Starfish document each time.
+   *
+   * Path format: `{baseResolved}-{generation padded to 4 digits}`
+   * e.g. `analytics/user-1/events-0001`, `analytics/user-1/events-0002`
+   *
+   * The generation is persisted to `pathStorage` so it survives app restarts.
+   * On success: advance generation. On failure: keep current generation (retry next flush).
    */
-  async cleanupAfterFlush(
-    delivered: SunglassesEvent[],
-    config: CleanupConfig
+  private async sendRotating(
+    batch: ReadonlyArray<SunglassesEvent>,
+    identity: string,
+    baseResolved: string
   ): Promise<void> {
-    if (delivered.length === 0) return;
+    const gen = await this.loadGeneration(identity);
+    const path = `${baseResolved}-${String(gen).padStart(4, '0')}`;
 
-    const identity = delivered[0].distinctId || delivered[0].anonymousId;
-    const path = resolveStoragePath(this.storagePath, identity);
+    // Fresh document for this batch only — no pull needed
+    const doc = mergeEvents(createEmptyDocument(), batch);
 
-    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
-      try {
-        const pulled = await this.pull(path);
-        if (!pulled) return; // Nothing to clean up
+    try {
+      const response = await this.push(path, doc, '');
 
-        const pruned = pruneDocument(pulled.data, config);
-        const pushResponse = await this.push(path, pruned, pulled.hash);
-
-        if (pushResponse.status === 409) {
-          continue; // Retry on conflict
-        }
-        return;
-      } catch {
-        if (attempt === this.maxRetries - 1) {
-          console.warn(
-            '[SunGlasses] StarfishAnalyticsAdapter: cleanup failed — will retry on next flush'
-          );
-        }
+      if (response.ok || response.status === 409) {
+        // 409 on a brand-new path is unexpected but harmless — advance anyway
+        await this.saveGeneration(identity, gen + 1);
+      } else {
+        console.warn(
+          `[SunGlasses] StarfishAnalyticsAdapter: rotating push failed with status ${response.status} for path "${path}"`
+        );
+        // Keep generation as-is — next flush will retry with the same path
       }
+    } catch (err) {
+      console.warn(
+        `[SunGlasses] StarfishAnalyticsAdapter: rotating push network error for path "${path}"`,
+        err
+      );
+      // Keep generation as-is — SunglassesCore will retry via flush
     }
   }
+
+  private async loadGeneration(identity: string): Promise<number> {
+    if (!this.pathStorage) return 0;
+    try {
+      const raw = await this.pathStorage.read(`${GEN_KEY_PREFIX}${identity}`);
+      return raw !== null ? parseInt(raw, 10) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private async saveGeneration(identity: string, gen: number): Promise<void> {
+    if (!this.pathStorage) return;
+    try {
+      await this.pathStorage.write(`${GEN_KEY_PREFIX}${identity}`, String(gen));
+    } catch (err) {
+      console.warn('[SunGlasses] StarfishAnalyticsAdapter: failed to save generation counter', err);
+    }
+  }
+
+  // ── Private: HTTP helpers ──────────────────────────────────────────────────
 
   private async pull(path: string): Promise<PullResponse | null> {
     const controller = new AbortController();

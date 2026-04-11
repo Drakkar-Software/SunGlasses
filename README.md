@@ -24,6 +24,7 @@ Track screen views, button taps, and custom events — with built-in PII sanitiz
 | `@sunglasses/storage-async-storage` | React Native | AsyncStorage persistence adapter |
 | `@sunglasses/storage-http` | Any | Batched HTTP push output adapter |
 | `@sunglasses/adapter-starfish` | Any | Drakkar-Software/Starfish document-sync adapter |
+| `@sunglasses/adapter-console` | Any | Development adapter — pretty-prints events to console |
 
 ## Quickstart — Web (React + Vite)
 
@@ -388,6 +389,174 @@ class SecureStorageAdapter implements IStorageAdapter {
 **Event counting returns 0**
 - Ensure `enableEventCounting: true` in your config
 - Counts only accumulate for `capture()` events (not screen/identify/alias)
+
+## Session Tracking
+
+Automatically group events into sessions. A session expires after a configurable idle period. Session IDs are random UUIDs — no PII.
+
+```ts
+const client = await SunglassesCore.create({
+  enableSessionTracking: true,
+  sessionIdleTimeoutMs: 30 * 60 * 1000, // default: 30 minutes
+  ...
+});
+```
+
+When enabled, every event gains `context.sessionId`. A synthetic `$session_start` event is emitted automatically at the beginning of each new session.
+
+## Persistent User Traits
+
+Set user traits once via `identify()` and they are automatically forwarded with every subsequent event in `context.traits` — without re-calling `identify()`.
+
+```ts
+// Set traits once (e.g. after login)
+client.identify('user-123', { plan: 'pro', country: 'US' });
+
+// All subsequent events automatically include context.traits = { plan: 'pro', country: 'US' }
+client.capture('button_clicked', { buttonId: 'cta' });
+```
+
+Sensitive keys (`email`, `password`, `phone`, etc.) are stripped before traits are persisted. Traits survive app restarts. Call `client.reset()` to clear them.
+
+## Type-Safe Event Catalog
+
+Get compile-time checking of event names and property shapes — zero runtime cost:
+
+```ts
+import { asTyped } from '@sunglasses/core';
+
+type MyEvents = {
+  button_clicked: { buttonId: string; screen: string };
+  purchase_completed: { itemId: string; amount: number };
+  page_viewed: undefined; // no required properties
+};
+
+const typed = asTyped<MyEvents>(client);
+
+// Compile-time type-checked:
+typed.capture('button_clicked', { buttonId: 'cta', screen: 'home' }); // ✓
+typed.capture('button_clicked', { wrong: 'key' });                    // ✗ TS error
+typed.capture('unknown_event', {});                                   // ✗ TS error
+```
+
+## Development — ConsoleAdapter
+
+Pretty-print events to the console during development:
+
+```ts
+import { ConsoleAdapter } from '@sunglasses/adapter-console';
+
+SunglassesCore.create({
+  adapters: [
+    new ConsoleAdapter({ verbose: false }),
+    // add your real adapter here for production
+  ],
+  ...
+});
+```
+
+Output example:
+```
+[SunGlasses] capture "button_clicked" @ 2024-01-15T10:30:00.000Z
+  ┌──────────┬─────────┐
+  │ buttonId │ cta     │
+  │ screen   │ home    │
+  └──────────┴─────────┘
+  anonymousId: 550e8400-e29b-41d4-a716-446655440000
+```
+
+Options: `prefix`, `verbose` (full JSON), `onlyFor` (event filter list).
+
+## Consent Versioning (GDPR)
+
+When your privacy policy changes, force users to re-consent by bumping the version:
+
+```ts
+SunglassesCore.create({
+  consentPolicyVersion: '2.0',  // bump this whenever your policy changes
+  ...
+});
+```
+
+If a user previously consented under a different policy version, their consent is reset to `'unknown'` — prompting them to opt-in again. The full consent history (up to 10 entries) is preserved:
+
+```ts
+const history = client.getConsentHistory();
+// [
+//   { status: 'opted-in', policyVersion: '1.0', timestamp: '...' },
+//   { status: 'unknown',  policyVersion: '2.0', timestamp: '...' },
+// ]
+```
+
+## Data Portability (GDPR Article 20)
+
+Export all locally stored user data as structured JSON — no network calls:
+
+```ts
+const data = await client.exportUserData();
+// {
+//   exportedAt: '2024-01-15T10:30:00.000Z',
+//   anonymousId: '...',
+//   distinctId: 'user-123',
+//   consentStatus: 'opted-in',
+//   consentHistory: [...],
+//   traits: { plan: 'pro' },
+//   queuedEvents: [...],
+//   archivedEvents: [...],  // if enableLocalArchive: true
+//   eventCountSummary: { button_clicked: { daily: 3, 'all-time': 42 } }
+// }
+```
+
+## Local Event Archive
+
+Keep a permanent local copy of all events — separate from the queue. Events in the archive are **never removed after a flush**, making it ideal for offline-first apps and GDPR data export.
+
+```ts
+const client = await SunglassesCore.create({
+  enableLocalArchive: true,
+  ...
+});
+
+// Export includes all archived events
+const data = await client.exportUserData();
+console.log(data.archivedEvents.length); // all events since last clearLocalArchive()
+
+// Prune old events from the archive
+await client.clearLocalArchive({ maxAgeMs: 30 * 24 * 60 * 60 * 1000 }); // keep last 30 days
+
+// Clear the entire archive
+await client.clearLocalArchive();
+```
+
+## Starfish — Rotating Documents
+
+By default, `StarfishAnalyticsAdapter` maintains a single growing document per identity. For high-volume apps or when you want smaller, isolated push documents, enable path rotation:
+
+```ts
+import { StarfishAnalyticsAdapter } from '@sunglasses/adapter-starfish';
+import { LocalStorageAdapter } from '@sunglasses/storage-localstorage';
+
+const storage = new LocalStorageAdapter();
+
+new StarfishAnalyticsAdapter({
+  serverUrl: 'https://sync.example.com',
+  storagePath: 'analytics/{identity}/events',
+  authToken: 'your-token',
+
+  // Each successful push creates a new file: events-0001, events-0002, ...
+  rotatePathOnSuccess: true,
+  pathStorage: storage,  // persists the generation counter across restarts
+})
+```
+
+With rotation:
+- **No pull step** — each push is always a fresh document (faster, no conflict resolution)
+- **Small files** — each document contains only the events from one flush batch
+- **Complete history** — enable `enableLocalArchive: true` to keep all events locally
+
+Without rotation (default):
+- Single growing document per identity, merged on each push
+- Optimistic locking (409 conflict resolution) ensures consistency
 
 ## Contributing
 

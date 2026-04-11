@@ -41,7 +41,7 @@ export class HttpStorageAdapter implements IAnalyticsAdapter {
     };
   }
 
-  async send(batch: SunglassesEvent[]): Promise<void> {
+  async send(batch: ReadonlyArray<SunglassesEvent>): Promise<void> {
     if (batch.length === 0) return;
     await this.postBatch(batch, 0);
   }
@@ -54,7 +54,7 @@ export class HttpStorageAdapter implements IAnalyticsAdapter {
     // All delivery is synchronous in send(); nothing pending
   }
 
-  private async postBatch(batch: SunglassesEvent[], attempt: number): Promise<void> {
+  private async postBatch(batch: ReadonlyArray<SunglassesEvent>, attempt: number): Promise<void> {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeoutId = controller
       ? setTimeout(() => controller.abort(), this.config.timeout)
@@ -95,7 +95,7 @@ export class HttpStorageAdapter implements IAnalyticsAdapter {
     }
   }
 
-  private scheduleRetry(batch: SunglassesEvent[], attempt: number): void {
+  private scheduleRetry(batch: ReadonlyArray<SunglassesEvent>, attempt: number): void {
     scheduleRetry(
       {
         attempt,

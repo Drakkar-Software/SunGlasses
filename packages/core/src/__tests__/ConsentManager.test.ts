@@ -68,4 +68,76 @@ describe('ConsentManager', () => {
     expect(persisted.status).toBe('opted-in');
     expect(persisted.updatedAt).toBeTruthy();
   });
+
+  // ── Policy versioning ──────────────────────────────────────────────────────
+
+  it('resets consent to unknown when policy version changes', async () => {
+    const storage = makeStorage({
+      'sunglasses:consent': JSON.stringify({
+        status: 'opted-in',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        policyVersion: '1.0',
+        history: [],
+      }),
+    });
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(false, '2.0'); // version changed
+    expect(mgr.status).toBe('unknown');
+  });
+
+  it('does NOT reset consent when policy version is the same', async () => {
+    const storage = makeStorage({
+      'sunglasses:consent': JSON.stringify({
+        status: 'opted-in',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        policyVersion: '1.0',
+        history: [],
+      }),
+    });
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(false, '1.0'); // same version
+    expect(mgr.status).toBe('opted-in');
+  });
+
+  it('records policyVersion in history on optIn/optOut', async () => {
+    const storage = makeStorage();
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(false, '1.0');
+    await mgr.optIn('1.0');
+    await mgr.optOut('1.0');
+    const history = mgr.getHistory();
+    expect(history).toHaveLength(2);
+    expect(history[0].status).toBe('opted-in');
+    expect(history[0].policyVersion).toBe('1.0');
+    expect(history[1].status).toBe('opted-out');
+  });
+
+  it('caps history at 10 entries', async () => {
+    const storage = makeStorage();
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(false);
+    // Toggle 12 times
+    for (let i = 0; i < 6; i++) {
+      await mgr.optIn();
+      await mgr.optOut();
+    }
+    expect(mgr.getHistory().length).toBeLessThanOrEqual(10);
+  });
+
+  it('appends a reset entry to history when policy version changes', async () => {
+    const storage = makeStorage({
+      'sunglasses:consent': JSON.stringify({
+        status: 'opted-in',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        policyVersion: '1.0',
+        history: [{ status: 'opted-in', policyVersion: '1.0', timestamp: '2024-01-01T00:00:00.000Z' }],
+      }),
+    });
+    const mgr = new ConsentManager(storage, logger);
+    await mgr.initialize(false, '2.0');
+    const history = mgr.getHistory();
+    expect(history.length).toBe(2);
+    expect(history[1].status).toBe('unknown');
+    expect(history[1].policyVersion).toBe('2.0');
+  });
 });
