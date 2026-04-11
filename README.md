@@ -235,16 +235,45 @@ client.capture('order_created', { orderId: '123' }, {
 });
 ```
 
-### UTM / Attribution Capture (web only)
+### UTM / Attribution Capture
 
-Call once at app startup to capture marketing attribution into super properties:
+**Web** — reads `utm_*` params from `window.location.search` and `document.referrer`:
 
 ```ts
 import { captureUtmParams } from '@sunglasses/react';
 
 const client = await SunglassesCore.create({ ... });
-captureUtmParams(client); // reads utm_source/medium/campaign + document.referrer
+captureUtmParams(client); // call once at startup
 ```
+
+**React Native (Expo Router)** — reads params from the current Expo Router URL via
+`useGlobalSearchParams()`. Place in your root `_layout.tsx`:
+
+```tsx
+import { useExpoRouterUtmCapture } from '@sunglasses/react-native';
+
+export default function RootLayout() {
+  const client = useSunglasses();
+  useExpoRouterUtmCapture(client); // captures on mount + re-captures on new deep links
+  return <Stack />;
+}
+```
+
+**React Native (plain Linking API)** — handles cold start + re-opens. Works with
+both Expo and bare React Native:
+
+```tsx
+import { useLinkingUtmCapture } from '@sunglasses/react-native';
+
+export default function App() {
+  const client = useSunglasses();
+  useLinkingUtmCapture(client);
+  return <NavigationContainer>...</NavigationContainer>;
+}
+```
+
+You can also call `captureDeepLinkUtmParams(client, url)` directly if you manage
+deep link handling yourself.
 
 ## Custom Middleware
 
@@ -265,6 +294,8 @@ SunglassesCore.create({ middleware: [myMiddleware], ... });
 ```
 
 ## Starfish Integration
+
+[Starfish](https://github.com/Drakkar-Software/Starfish) is a document-sync backend developed by Drakkar-Software.
 
 ```ts
 import { StarfishAnalyticsAdapter } from '@sunglasses/adapter-starfish';

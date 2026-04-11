@@ -3,6 +3,9 @@ export type { SunglassesProviderProps } from './SunglassesProvider.js';
 export { useSunglasses } from './context.js';
 export { useExpoRouterScreenTracking } from './useExpoRouterScreenTracking.js';
 export { useNavigationScreenTracking } from './useNavigationScreenTracking.js';
+export { captureDeepLinkUtmParams } from './captureDeepLinkUtmParams.js';
+export { useLinkingUtmCapture } from './useLinkingUtmCapture.js';
+export { useExpoRouterUtmCapture } from './useExpoRouterUtmCapture.js';
 
 // Re-export core types for convenience
 export type {

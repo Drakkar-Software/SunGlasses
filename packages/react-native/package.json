@@ -1,6 +1,6 @@
 {
   "name": "@sunglasses/react-native",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "React Native / Expo provider and hooks for SunGlasses event tracking",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -37,7 +37,9 @@
   "devDependencies": {
     "@sunglasses/tsconfig": "workspace:*",
     "@types/react": "^18.3.12",
+    "happy-dom": "^15.11.7",
     "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

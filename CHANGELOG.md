@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-04-11
+
+### Added
+
+- **Deep link UTM capture** (`@sunglasses/react-native`): three new exports for React Native attribution:
+  - `captureDeepLinkUtmParams(client, url)` — low-level utility that extracts `utm_*` params from any deep link URL (HTTPS universal links and custom scheme links) and registers them as super properties; works with Hermes and JavaScriptCore
+  - `useLinkingUtmCapture(client)` — hook backed by React Native's `Linking` API; handles both cold-start attribution (`getInitialURL`) and re-attribution when a new deep link arrives while the app is open (`addEventListener('url', ...)`)
+  - `useExpoRouterUtmCapture(client)` — hook backed by Expo Router's `useGlobalSearchParams()`; works from the root `_layout.tsx` and re-captures whenever the URL params change (new campaign links)
+
 ## [0.2.0] — 2026-04-11
 
 ### Added
