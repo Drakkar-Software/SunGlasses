@@ -600,6 +600,28 @@ export interface ISunglassesTypedClient<T extends EventMap> extends ISunglassesC
 }
 
 // ---------------------------------------------------------------------------
+// Error event properties (shared across error-capturing adapters)
+// ---------------------------------------------------------------------------
+
+/**
+ * Standard properties emitted by error-capturing adapters as `$error` events.
+ * Shared by `@drakkar.software/sunglasses-adapter-sentry`,
+ * `@drakkar.software/sunglasses-adapter-posthog`, and `SunglassesErrorBoundary`.
+ */
+export interface ErrorEventProperties {
+  $error_message: string;
+  $error_type: string;
+  /** `true` when caught by an error boundary / try-catch; `false` for unhandled errors. */
+  $error_handled: boolean;
+  /** Sentry-compatible severity level. Usually `'error'`. */
+  $error_level: string;
+  /** Optional stringified stack trace. Disabled by default for privacy. */
+  $error_stack?: string;
+  /** Allows adapter-specific extension properties (e.g. from `beforeCapture`). */
+  [key: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
 // Screen tracking
 // ---------------------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
+import type { ISunglassesClient, ErrorEventProperties } from '@drakkar.software/sunglasses-core';
 
 // ---------------------------------------------------------------------------
 // Minimal Sentry-compatible type definitions
@@ -53,13 +53,15 @@ export interface SentryBridgeConfig {
   /**
    * Skip errors whose message matches any of these patterns.
    * Matched errors are not captured by SunGlasses (Sentry still receives them).
+   * Pattern is tested against the raw (pre-truncation) message.
    */
   ignorePatterns?: RegExp[];
   /**
    * Optional transform applied before `client.capture()`.
-   * Return the (possibly modified) props to capture, or `null` to skip.
+   * Receives typed `ErrorEventProperties`; return a (possibly extended) props
+   * object to capture, or `null` to skip capture entirely.
    */
-  beforeCapture?: (props: Record<string, unknown>) => Record<string, unknown> | null;
+  beforeCapture?: (props: ErrorEventProperties) => Record<string, unknown> | null;
   /**
    * When `true`, the bridge returns `null` from `beforeSend`, instructing Sentry
    * not to transmit the event to its servers. Useful when you want Sentry purely
@@ -121,7 +123,7 @@ export function createSentryBeforeSend(
     const message = rawMessage.slice(0, maxMessageLength);
 
     if (!ignorePatterns.some((p) => p.test(rawMessage))) {
-      let props: Record<string, unknown> = {
+      let props: ErrorEventProperties = {
         $error_message: message,
         $error_type: exc?.type ?? 'Error',
         $error_handled: false,
@@ -135,16 +137,16 @@ export function createSentryBeforeSend(
           .slice(-maxStackFrames)
           .map((f) => `${f.function ?? '?'} (${f.filename ?? '?'}:${f.lineno ?? '?'})`)
           .join('\n');
-        props.$error_stack = frames;
+        props = { ...props, $error_stack: frames };
       }
 
       if (beforeCapture) {
         const transformed = beforeCapture(props);
         if (!transformed) return result;
-        props = transformed;
+        client.capture('$error', transformed);
+      } else {
+        client.capture('$error', props);
       }
-
-      client.capture('$error', props);
     }
 
     return result;

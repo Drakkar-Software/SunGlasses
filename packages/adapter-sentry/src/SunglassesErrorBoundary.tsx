@@ -1,24 +1,49 @@
 import React from 'react';
-import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
-import type { SentryBridgeConfig } from './createSentryBeforeSend.js';
+import type { ISunglassesClient, ErrorEventProperties } from '@drakkar.software/sunglasses-core';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/**
+ * Configuration for `SunglassesErrorBoundary`.
+ */
+export interface ErrorBoundaryConfig {
+  /**
+   * Include the stack trace in `$error_stack`. Default: `false` (privacy-safe).
+   * Stack traces may expose internal file paths and function names.
+   */
+  includeStack?: boolean;
+  /**
+   * Maximum number of stack frames to include when `includeStack` is `true`.
+   * Default: `5`.
+   */
+  maxStackFrames?: number;
+  /**
+   * Truncate error messages to this many characters. Default: `200`.
+   * Error messages sometimes contain user data.
+   */
+  maxMessageLength?: number;
+  /**
+   * Skip errors whose message matches any of these patterns.
+   * Pattern is tested against the raw (pre-truncation) message.
+   */
+  ignorePatterns?: RegExp[];
+  /**
+   * Optional transform applied before `client.capture()`.
+   * Receives typed `ErrorEventProperties`; return a (possibly extended) props
+   * object to capture, or `null` to skip capture entirely.
+   */
+  beforeCapture?: (props: ErrorEventProperties) => Record<string, unknown> | null;
+}
 
 interface Props {
   /** SunGlasses client instance that will receive `$error` capture events. */
   client: ISunglassesClient;
   /** Rendered when an error is caught. Defaults to rendering nothing. */
   fallback?: React.ReactNode;
-  /**
-   * Error capture configuration. Shares the same shape as `SentryBridgeConfig`
-   * (minus `suppressSentrySend`, which is not applicable here).
-   */
-  config?: Pick<
-    SentryBridgeConfig,
-    'includeStack' | 'maxStackFrames' | 'maxMessageLength' | 'ignorePatterns' | 'beforeCapture'
-  >;
+  /** Error capture configuration. */
+  config?: ErrorBoundaryConfig;
   children: React.ReactNode;
 }
 
@@ -67,7 +92,7 @@ export class SunglassesErrorBoundary extends React.Component<Props, State> {
 
     if (ignorePatterns.some((p) => p.test(rawMessage))) return;
 
-    let props: Record<string, unknown> = {
+    let props: ErrorEventProperties = {
       $error_message: message,
       $error_type: error.name,
       $error_handled: true,
@@ -80,16 +105,16 @@ export class SunglassesErrorBoundary extends React.Component<Props, State> {
         .filter((line) => line.trim().startsWith('at '))
         .slice(0, maxStackFrames)
         .join('\n');
-      props.$error_stack = frames;
+      props = { ...props, $error_stack: frames };
     }
 
     if (beforeCapture) {
       const transformed = beforeCapture(props);
       if (!transformed) return;
-      props = transformed;
+      client.capture('$error', transformed);
+    } else {
+      client.capture('$error', props);
     }
-
-    client.capture('$error', props);
   }
 
   render(): React.ReactNode {

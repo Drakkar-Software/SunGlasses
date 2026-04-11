@@ -1,7 +1,7 @@
 {
-  "name": "@drakkar.software/sunglasses-error-capture",
+  "name": "@drakkar.software/sunglasses-adapter-posthog",
   "version": "0.1.0",
-  "description": "Sentry bridge and React error boundary for SunGlasses — captures errors as analytics events",
+  "description": "PostHog bridge for SunGlasses — forwards PostHog events as SunGlasses analytics events",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -26,20 +26,8 @@
   "dependencies": {
     "@drakkar.software/sunglasses-core": "workspace:*"
   },
-  "peerDependencies": {
-    "react": ">=17"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@drakkar.software/sunglasses-tsconfig": "workspace:*",
-    "@types/react": "^18.3.12",
-    "happy-dom": "^15.11.7",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

@@ -48,6 +48,7 @@ export type {
   SessionState,
   UserDataExport,
   EventMap,
+  ErrorEventProperties,
 } from './types.js';
 
 // Utilities (exported for adapter authors)

@@ -7,11 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-04-11
+
+### Added
+
+- **`@drakkar.software/sunglasses-adapter-sentry`** — replaces `error-capture`; renamed to follow adapter naming convention
+  - `createSentryBeforeSend` and `SunglassesErrorBoundary` APIs unchanged
+  - `ErrorBoundaryConfig` replaces `Pick<SentryBridgeConfig, ...>` in `SunglassesErrorBoundary` props — cleaner type, same fields
+  - `beforeCapture` callback now receives typed `ErrorEventProperties` instead of `Record<string, unknown>`
+- **`@drakkar.software/sunglasses-adapter-posthog`** — new package: bridges PostHog `before_send` events to SunGlasses
+  - `createPostHogBeforeSend(client, config?)` — intercepts PostHog events and forwards them as `client.capture(eventName, props)` calls; return `null` to suppress PostHog transmission via `suppressPostHogSend: true`
+  - Works with posthog-js (web) and posthog-react-native (posthog-js monorepo); no posthog-js runtime dependency
+  - Config: `suppressPostHogSend`, `includeSystemEvents`, `ignoreEventTypes`, `ignorePatterns`, `beforeCapture`, `transformEventName`
+- **`@drakkar.software/sunglasses-core` 0.3.0** — new `ErrorEventProperties` interface: typed schema for `$error` events shared across all error-capturing adapters
+
+### Removed
+
+- **`@drakkar.software/sunglasses-error-capture`** — replaced by `@drakkar.software/sunglasses-adapter-sentry`
+
 ## [0.2.2] — 2026-04-11
 
 ### Added
 
-- **`@drakkar.software/sunglasses-error-capture`** — new package: captures errors as SunGlasses `$error` events
+- **`@drakkar.software/sunglasses-error-capture`** — *(now renamed to `adapter-sentry`)* initial release
   - `createSentryBeforeSend(client, config?, originalBeforeSend?)` — Sentry bridge that intercepts errors via Sentry's `beforeSend` callback and fires them as `client.capture('$error', ...)` events; works with `@sentry/browser`, `@sentry/react`, and `@sentry/react-native`; no `@sentry/*` runtime dependency required
   - Set `suppressSentrySend: true` to drop the event from Sentry's transmission queue (return `null` from `beforeSend`), letting Sentry act as a local error capture engine with no data leaving the device; compatible with omitting the DSN entirely
   - `SunglassesErrorBoundary` — React error boundary component that captures render-phase errors with `$error_handled: true`; complements the Sentry bridge for errors caught at component boundaries
