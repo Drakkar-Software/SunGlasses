@@ -494,6 +494,20 @@ export interface StarfishAdapterConfig {
    * Can be the same adapter as `SunglassesConfig.storage`.
    */
   pathStorage?: IStorageAdapter;
+  /**
+   * When `true`, events are pushed directly without a prior pull.
+   * No merge, no optimistic locking, no conflict detection.
+   *
+   * Use this for Starfish collections configured with `queueOnly: true` —
+   * the server ignores `baseHash` and returns no stored data on pull,
+   * so a pull round-trip is always wasted.
+   *
+   * On push failure the adapter **throws**, allowing SunglassesCore to keep
+   * events in the local queue and retry on the next flush interval.
+   *
+   * Cannot be combined with `rotatePathOnSuccess`.
+   */
+  pushOnly?: boolean;
 }
 
 // ---------------------------------------------------------------------------

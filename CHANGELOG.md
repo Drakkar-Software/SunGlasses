@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-04-12
+
+### Added
+
+- **`pushOnly` option on `StarfishAnalyticsAdapter`** (`@drakkar.software/sunglasses-adapter-starfish`, `@drakkar.software/sunglasses-core`): skips the pull round-trip and pushes a fresh document directly. Designed for Starfish collections configured with `queueOnly: true`, where pull always returns empty data and optimistic locking is irrelevant.
+
+  ```ts
+  new StarfishAnalyticsAdapter({
+    serverUrl,
+    storagePath: 'analytics/{identity}/events',
+    authToken,
+    pushOnly: true, // no GET /pull — direct POST /push
+  });
+  ```
+
+  - On push failure the adapter **throws**, so `SunglassesCore` keeps events in the local queue and retries on the next flush interval. Without this, a transient server error would silently discard the batch.
+  - Cannot be combined with `rotatePathOnSuccess`.
+
 ## [0.5.0] — 2026-04-12
 
 ### Added

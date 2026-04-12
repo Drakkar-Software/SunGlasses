@@ -35,6 +35,12 @@ interface PullResponse {
  * 4. On 409 Conflict (optimistic locking): pull again, re-merge, re-push
  *    (iterative, not recursive, to prevent stack overflow under high contention)
  *
+ * ## Push-only mode (`pushOnly: true`)
+ * Skips the pull step entirely — events are pushed as a fresh document each time.
+ * Use for Starfish collections with `queueOnly: true` where pull always returns
+ * empty data and optimistic locking is not needed.
+ * On failure the adapter throws, keeping events in the local queue for retry.
+ *
  * ## Rotating path mode (`rotatePathOnSuccess: true`)
  * Each successful push creates a **new** Starfish document with an
  * auto-incrementing path suffix (e.g. `events-0001`, `events-0002`…).
@@ -54,6 +60,7 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
   private readonly authToken: string;
   private readonly maxRetries: number;
   private readonly timeoutMs: number;
+  private readonly pushOnly: boolean;
   private readonly rotatePathOnSuccess: boolean;
   private readonly pathStorage: IStorageAdapter | null;
 
@@ -63,6 +70,7 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
     this.authToken = config.authToken ?? '';
     this.maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.timeoutMs = config.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.pushOnly = config.pushOnly ?? false;
     this.rotatePathOnSuccess = config.rotatePathOnSuccess ?? false;
     this.pathStorage = config.pathStorage ?? null;
 
@@ -89,6 +97,10 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
     }
 
     const baseResolved = resolveStoragePath(this.storagePath, identity);
+
+    if (this.pushOnly) {
+      return this.sendPushOnly(batch, baseResolved);
+    }
 
     if (this.rotatePathOnSuccess && this.pathStorage) {
       return this.sendRotating(batch, identity, baseResolved);
@@ -187,6 +199,23 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
     console.warn(
       `[SunGlasses] StarfishAnalyticsAdapter: max retries (${this.maxRetries}) exceeded for path "${path}" — batch discarded`
     );
+  }
+
+  // ── Private: push-only mode (queueOnly collections) ──────────────────────
+
+  /**
+   * Push a fresh document directly, no pull, no merge, no conflict detection.
+   * Throws on failure so SunglassesCore keeps events in queue for retry.
+   */
+  private async sendPushOnly(batch: ReadonlyArray<SunglassesEvent>, path: string): Promise<void> {
+    const doc = mergeEvents(createEmptyDocument(), batch);
+    const response = await this.push(path, doc, '');
+
+    if (!response.ok) {
+      throw new Error(
+        `[SunGlasses] StarfishAnalyticsAdapter: push-only push failed with status ${response.status} for path "${path}"`
+      );
+    }
   }
 
   // ── Private: rotating path mode ────────────────────────────────────────────

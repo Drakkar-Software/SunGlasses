@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/sunglasses-adapter-starfish",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Starfish document-sync adapter for SunGlasses (Drakkar-Software/Starfish)",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
