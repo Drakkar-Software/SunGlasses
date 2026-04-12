@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/sunglasses-adapter-posthog",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "PostHog bridge for SunGlasses — forwards PostHog events as SunGlasses analytics events",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

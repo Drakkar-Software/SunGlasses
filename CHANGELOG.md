@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-04-12
+
+### Changed
+
+- **EventCounter storage consolidation** (`@drakkar.software/sunglasses-core`): all per-event frequency counts are now stored in a single `sg:counts` JSON blob instead of one localStorage key per event per period. With N event types and 4 periods, the old approach wrote N×4 keys; the new approach always writes exactly 1 key regardless of event count.
+
+  | Before (per event × per period) | After |
+  |----------------------------------|-------|
+  | `sg:count:daily:2026-04-12:home_opened` | (eliminated) |
+  | `sg:count:weekly:2026-W15:home_opened` | (eliminated) |
+  | `sg:count:monthly:2026-04:home_opened` | (eliminated) |
+  | `sg:count:all-time:all:home_opened` | (eliminated) |
+  | *(N events × 4 keys each)* | `sg:counts` = `{"daily:…:home_opened":1,…}` |
+
+  > **Migration note**: existing `sg:count:*` keys are abandoned — event counters reset to zero on upgrade. Count data is non-critical; consent, identity, session, and queue are unaffected.
+
 ## [0.6.0] — 2026-04-12
 
 ### Added
