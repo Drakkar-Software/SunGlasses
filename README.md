@@ -628,10 +628,13 @@ Sensitive keys (`email`, `password`, `phone`, etc.) are stripped before traits a
 
 ## Type-Safe Event Catalog
 
-Get compile-time checking of event names and property shapes — zero runtime cost:
+### Module-level singleton (recommended)
+
+The most common pattern is exporting a single `analytics` constant that's safe to import anywhere, before the SDK has initialised:
 
 ```ts
-import { asTyped } from '@drakkar.software/sunglasses-core';
+// analytics.ts
+import { createLazyClient, SunglassesCore } from '@drakkar.software/sunglasses-core';
 
 type MyEvents = {
   button_clicked: { buttonId: string; screen: string };
@@ -639,13 +642,43 @@ type MyEvents = {
   page_viewed: undefined; // no required properties
 };
 
-const typed = asTyped<MyEvents>(client);
+export const analytics = createLazyClient<MyEvents>();
 
-// Compile-time type-checked:
-typed.capture('button_clicked', { buttonId: 'cta', screen: 'home' }); // ✓
-typed.capture('button_clicked', { wrong: 'key' });                    // ✗ TS error
-typed.capture('unknown_event', {});                                   // ✗ TS error
+export async function initAnalytics() {
+  const client = await SunglassesCore.create({ ... });
+  analytics.init(client); // wire up — safe to call multiple times
+  return client;
+}
 ```
+
+```ts
+// anywhere else — safe at import time
+import { analytics } from './analytics';
+
+analytics.capture('button_clicked', { buttonId: 'cta', screen: 'home' }); // ✓ typed
+analytics.capture('button_clicked', { wrong: 'key' });                    // ✗ TS error
+analytics.capture('unknown_event', {});                                   // ✗ TS error
+```
+
+All methods are silent no-ops before `init()`. After `init()`, every call delegates to the real `SunglassesCore` instance.
+
+### Inline typing with `asTyped`
+
+When you already hold a `SunglassesCore` reference (e.g. inside a React context), use `asTyped` for a zero-cost compile-time cast:
+
+```ts
+import { asTyped } from '@drakkar.software/sunglasses-core';
+
+const typed = asTyped<MyEvents>(client);
+typed.capture('button_clicked', { buttonId: 'cta', screen: 'home' }); // ✓
+```
+
+> **Anti-pattern** — do not use `Object.assign` to patch a stub with `asTyped`:
+> ```ts
+> // ✗ broken — Object.assign skips prototype methods; capture() is never replaced
+> Object.assign(analytics, asTyped<MyEvents>(client));
+> ```
+> Use `createLazyClient` instead.
 
 ## Development — ConsoleAdapter
 

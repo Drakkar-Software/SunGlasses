@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-04-12
+
+### Added
+
+- **`createLazyClient<T>()`** (`@drakkar.software/sunglasses-core`) — typed analytics stub safe to use before the SDK initialises.
+
+  Module-level analytics singletons are a common pattern: export a client constant at import time, then wire up the real `SunglassesCore` instance asynchronously. The previous idiom (`Object.assign(stub, asTyped(client))`) was silently broken — `Object.assign` copies only own enumerable properties, and `capture()` is a class prototype method, so the noop stub was **never replaced**.
+
+  `createLazyClient` fixes this with a proper lazy-proxy object:
+
+  ```typescript
+  // analytics.ts
+  import { createLazyClient, SunglassesCore } from '@drakkar.software/sunglasses-core';
+
+  type MyEvents = {
+    button_clicked: { buttonId: string };
+    page_viewed: undefined;
+  };
+
+  export const analytics = createLazyClient<MyEvents>();
+
+  export async function initAnalytics() {
+    const client = await SunglassesCore.create({ ... });
+    analytics.init(client);   // wire up — safe to call multiple times
+    return client;
+  }
+  ```
+
+  - All methods are safe no-ops (or return empty-state defaults) before `init()`.
+  - After `init()`, every method delegates to the real `SunglassesCore` instance.
+  - Fully typed: `analytics.capture('unknown_event')` is a compile-time error.
+  - `init()` may be called multiple times — last call wins (useful for wedding/multi-tenant switching).
+
 ## [0.4.0] — 2026-04-12
 
 ### Changed

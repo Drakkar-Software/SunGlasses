@@ -23,6 +23,9 @@ export { LocalEventArchive } from './LocalEventArchive.js';
 // Type-safe event catalog utility
 export { asTyped } from './asTyped.js';
 
+// Module-level singleton helper — safe noop before init()
+export { createLazyClient } from './LazyClient.js';
+
 // All public types & interfaces
 export type {
   IStorageAdapter,
