@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-04-12
+
+### Changed
+
+- **Storage key prefix shortened** (`@drakkar.software/sunglasses-core`, `@drakkar.software/sunglasses-adapter-starfish`): all internal `IStorageAdapter` keys are now prefixed with `sg:` instead of `sunglasses:` — shorter keys reduce storage overhead, especially noticeable in `EventCounter` where one key is written per event per period.
+
+  | Old key | New key |
+  |---------|---------|
+  | `sunglasses:anon_id` | `sg:anon_id` |
+  | `sunglasses:distinct_id` | `sg:distinct_id` |
+  | `sunglasses:consent` | `sg:consent` |
+  | `sunglasses:session` | `sg:session` |
+  | `sunglasses:queue` | `sg:queue` |
+  | `sunglasses:traits` | `sg:traits` |
+  | `sunglasses:archive` | `sg:archive` |
+  | `sunglasses:count:{…}` | `sg:count:{…}` |
+  | `sunglasses:starfish:gen:{id}` | `sg:starfish:gen:{id}` |
+
+  > **Migration note**: existing persisted state (consent, traits, session, queued events, event counts, local archive) will not be read after upgrading — the SDK will start fresh as if on first launch. Re-prompt users for consent if you rely on a stored opt-in.
+
 ## [0.3.0] — 2026-04-11
 
 ### Added

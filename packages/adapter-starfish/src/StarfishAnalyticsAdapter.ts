@@ -17,7 +17,7 @@ const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 /** Storage key prefix for per-identity path generation counters. */
-const GEN_KEY_PREFIX = 'sunglasses:starfish:gen:';
+const GEN_KEY_PREFIX = 'sg:starfish:gen:';
 
 interface PullResponse {
   data: StarfishEventDocument;

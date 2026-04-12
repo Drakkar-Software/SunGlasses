@@ -1,7 +1,7 @@
 import type { CleanupConfig, IStorageAdapter, SunglassesEvent } from './types.js';
 import type { Logger } from './utils/logger.js';
 
-const STORAGE_KEY = 'sunglasses:archive';
+const STORAGE_KEY = 'sg:archive';
 
 interface ArchiveStore {
   version: '1';

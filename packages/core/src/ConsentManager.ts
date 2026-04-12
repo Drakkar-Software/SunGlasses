@@ -2,7 +2,7 @@ import type { ConsentHistoryEntry, ConsentState, ConsentStatus, IStorageAdapter 
 import type { Logger } from './utils/logger.js';
 import { nowISO } from './utils/timestamp.js';
 
-const STORAGE_KEY = 'sunglasses:consent';
+const STORAGE_KEY = 'sg:consent';
 const MAX_HISTORY_LENGTH = 10;
 
 /**

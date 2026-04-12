@@ -188,7 +188,7 @@ describe('deleteUserData()', () => {
 
     expect(client.getQueuedEventCount()).toBe(0);
     // Traits should be cleared from storage
-    expect(storage._store['sunglasses:traits']).toBeUndefined();
+    expect(storage._store['sg:traits']).toBeUndefined();
   });
 
   it('resets identity — new anonymousId, no distinctId', async () => {
@@ -258,7 +258,7 @@ describe('consentExpiryMs', () => {
 
     // Seed storage with a consent record 2 years old
     const twoYearsAgo = new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000).toISOString();
-    storage._store['sunglasses:consent'] = JSON.stringify({
+    storage._store['sg:consent'] = JSON.stringify({
       status: 'opted-in',
       updatedAt: twoYearsAgo,
       history: [],
@@ -280,7 +280,7 @@ describe('consentExpiryMs', () => {
 
     // Seed storage with a consent record 1 month old
     const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    storage._store['sunglasses:consent'] = JSON.stringify({
+    storage._store['sg:consent'] = JSON.stringify({
       status: 'opted-in',
       updatedAt: oneMonthAgo,
       history: [],
@@ -302,7 +302,7 @@ describe('consentExpiryMs', () => {
 
     // Seed storage with unknown consent (user never chose)
     const longAgo = new Date(Date.now() - 5 * 365 * 24 * 60 * 60 * 1000).toISOString();
-    storage._store['sunglasses:consent'] = JSON.stringify({
+    storage._store['sg:consent'] = JSON.stringify({
       status: 'unknown',
       updatedAt: longAgo,
       history: [],

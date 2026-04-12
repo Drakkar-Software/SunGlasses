@@ -2,8 +2,8 @@ import type { IdentityState, IStorageAdapter } from './types.js';
 import type { Logger } from './utils/logger.js';
 import { generateUUID, sha256Hex } from './utils/uuid.js';
 
-const ANON_ID_KEY = 'sunglasses:anon_id';
-const DISTINCT_ID_KEY = 'sunglasses:distinct_id';
+const ANON_ID_KEY = 'sg:anon_id';
+const DISTINCT_ID_KEY = 'sg:distinct_id';
 
 /**
  * Manages user identity.

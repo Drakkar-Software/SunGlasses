@@ -1,13 +1,13 @@
 import type { EventCountPeriod, IEventCounter, IStorageAdapter } from './types.js';
 import type { Logger } from './utils/logger.js';
 
-const KEY_PREFIX = 'sunglasses:count';
+const KEY_PREFIX = 'sg:count';
 
 /**
  * Persists per-event counts bucketed by time period (daily, weekly, monthly, all-time).
  *
  * Storage key format:
- *   `sunglasses:count:{period}:{bucket}:{eventName}`
+ *   `sg:count:{period}:{bucket}:{eventName}`
  *
  * where `bucket` is:
  *   - daily:    "2024-01-15"
@@ -99,7 +99,7 @@ export class EventCounter implements IEventCounter {
       const periods: EventCountPeriod[] = ['daily', 'weekly', 'monthly', 'all-time'];
 
       // Extract unique sanitized event names from known written keys once,
-      // before the loop. Key format: sunglasses:count:{period}:{bucket}:{eventName}
+      // before the loop. Key format: sg:count:{period}:{bucket}:{eventName}
       // Event names are sanitized in storageKey() so the last segment is safe to split on.
       const eventNames = new Set<string>(
         allKeys.map((k) => k.split(':').pop()!).filter(Boolean)

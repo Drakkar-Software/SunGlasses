@@ -50,7 +50,7 @@ describe('IdentityManager', () => {
     expect(resolved).toBe('user-123');
     expect(mgr.getEffectiveDistinctId()).toBe('user-123');
     expect(mgr.getState().isIdentified).toBe(true);
-    expect(storage._store['sunglasses:distinct_id']).toBe('user-123');
+    expect(storage._store['sg:distinct_id']).toBe('user-123');
   });
 
   it('identify() with anonymizeUserId=true returns a hash (not plaintext)', async () => {
@@ -73,7 +73,7 @@ describe('IdentityManager', () => {
     expect(mgr.getState().distinctId).toBeNull();
     expect(mgr.getState().isIdentified).toBe(false);
     expect(mgr.getAnonymousId()).not.toBe(originalAnon);
-    expect(storage._store['sunglasses:distinct_id']).toBeUndefined();
+    expect(storage._store['sg:distinct_id']).toBeUndefined();
   });
 
   it('getEffectiveDistinctId returns distinctId after identify()', async () => {

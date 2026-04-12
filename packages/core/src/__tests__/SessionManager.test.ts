@@ -81,7 +81,7 @@ describe('SessionManager', () => {
     await sm.end();
 
     expect(sm.sessionId).toBeNull();
-    expect(storage._store['sunglasses:session']).toBeUndefined();
+    expect(storage._store['sg:session']).toBeUndefined();
   });
 
   it('resumes a valid session from storage on initialize()', async () => {
@@ -106,7 +106,7 @@ describe('SessionManager', () => {
       lastActiveAt: new Date(Date.now() - 200_000).toISOString(), // 200 s ago
       eventCount: 5,
     };
-    storage._store['sunglasses:session'] = JSON.stringify(staleSession);
+    storage._store['sg:session'] = JSON.stringify(staleSession);
 
     const sm = new SessionManager(storage, makeLogger(), 60_000); // 60 s timeout
     await sm.initialize();

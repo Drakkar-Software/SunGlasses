@@ -3,7 +3,7 @@ import type { Logger } from './utils/logger.js';
 import { nowISO } from './utils/timestamp.js';
 import { generateUUID } from './utils/uuid.js';
 
-const STORAGE_KEY = 'sunglasses:session';
+const STORAGE_KEY = 'sg:session';
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000; // 30 minutes
 
 /**

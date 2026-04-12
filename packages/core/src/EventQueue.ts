@@ -1,7 +1,7 @@
 import type { IStorageAdapter, SunglassesEvent } from './types.js';
 import type { Logger } from './utils/logger.js';
 
-const STORAGE_KEY = 'sunglasses:queue';
+const STORAGE_KEY = 'sg:queue';
 
 /**
  * In-memory event queue with persistence.

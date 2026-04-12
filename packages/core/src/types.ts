@@ -271,7 +271,7 @@ export interface SunglassesConfig {
   // ── Local event archive ───────────────────────────────────────────────────
   /**
    * When true, every event that passes the middleware pipeline is also written
-   * to a permanent local archive (`sunglasses:archive` in IStorageAdapter).
+   * to a permanent local archive (`sg:archive` in IStorageAdapter).
    *
    * Unlike the EventQueue, the archive is **never cleared automatically** after
    * a flush — events persist until `client.clearLocalArchive()` is called.

@@ -70,7 +70,7 @@ describe('EventQueue', () => {
   it('loads persisted events on initialize', async () => {
     const storage = makeStorage();
     const events = [makeEvent('x'), makeEvent('y')];
-    storage._store['sunglasses:queue'] = JSON.stringify(events);
+    storage._store['sg:queue'] = JSON.stringify(events);
 
     const q = new EventQueue(storage, createLogger(false), 100);
     await q.initialize();
@@ -84,6 +84,6 @@ describe('EventQueue', () => {
     q.enqueue(makeEvent('a'));
     await q.clear();
     expect(q.size).toBe(0);
-    expect(storage._store['sunglasses:queue']).toBeUndefined();
+    expect(storage._store['sg:queue']).toBeUndefined();
   });
 });

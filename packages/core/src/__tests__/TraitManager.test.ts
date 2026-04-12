@@ -78,13 +78,13 @@ describe('TraitManager', () => {
     const tm = new TraitManager(storage, makeLogger());
     await tm.initialize();
     await tm.setTraits({ plan: 'enterprise' });
-    expect(storage._store['sunglasses:traits']).toContain('enterprise');
+    expect(storage._store['sg:traits']).toContain('enterprise');
   });
 
   it('loads persisted traits on initialize()', async () => {
     const storage = makeStorage();
     // Pre-populate storage
-    storage._store['sunglasses:traits'] = JSON.stringify({ plan: 'pro' });
+    storage._store['sg:traits'] = JSON.stringify({ plan: 'pro' });
     const tm = new TraitManager(storage, makeLogger());
     await tm.initialize();
     expect(tm.getTraits().plan).toBe('pro');
@@ -97,7 +97,7 @@ describe('TraitManager', () => {
     await tm.setTraits({ plan: 'pro' });
     await tm.clearTraits();
     expect(tm.getTraits()).toEqual({});
-    expect(storage._store['sunglasses:traits']).toBeUndefined();
+    expect(storage._store['sg:traits']).toBeUndefined();
   });
 
   it('getTraits() returns a copy, not the internal reference', async () => {

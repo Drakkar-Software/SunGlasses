@@ -1,7 +1,7 @@
 import type { IStorageAdapter } from './types.js';
 import type { Logger } from './utils/logger.js';
 
-const STORAGE_KEY = 'sunglasses:traits';
+const STORAGE_KEY = 'sg:traits';
 
 /**
  * PII key names that are silently stripped before traits are stored.

@@ -34,7 +34,7 @@ describe('ConsentManager', () => {
 
   it('loads persisted consent state', async () => {
     const storage = makeStorage({
-      'sunglasses:consent': JSON.stringify({ status: 'opted-in', updatedAt: '2024-01-01T00:00:00.000Z' }),
+      'sg:consent': JSON.stringify({ status: 'opted-in', updatedAt: '2024-01-01T00:00:00.000Z' }),
     });
     const mgr = new ConsentManager(storage, logger);
     await mgr.initialize(false);
@@ -64,7 +64,7 @@ describe('ConsentManager', () => {
     const mgr = new ConsentManager(storage, logger);
     await mgr.initialize(false);
     await mgr.optIn();
-    const persisted = JSON.parse(storage._store['sunglasses:consent']);
+    const persisted = JSON.parse(storage._store['sg:consent']);
     expect(persisted.status).toBe('opted-in');
     expect(persisted.updatedAt).toBeTruthy();
   });
@@ -73,7 +73,7 @@ describe('ConsentManager', () => {
 
   it('resets consent to unknown when policy version changes', async () => {
     const storage = makeStorage({
-      'sunglasses:consent': JSON.stringify({
+      'sg:consent': JSON.stringify({
         status: 'opted-in',
         updatedAt: '2024-01-01T00:00:00.000Z',
         policyVersion: '1.0',
@@ -87,7 +87,7 @@ describe('ConsentManager', () => {
 
   it('does NOT reset consent when policy version is the same', async () => {
     const storage = makeStorage({
-      'sunglasses:consent': JSON.stringify({
+      'sg:consent': JSON.stringify({
         status: 'opted-in',
         updatedAt: '2024-01-01T00:00:00.000Z',
         policyVersion: '1.0',
@@ -126,7 +126,7 @@ describe('ConsentManager', () => {
 
   it('appends a reset entry to history when policy version changes', async () => {
     const storage = makeStorage({
-      'sunglasses:consent': JSON.stringify({
+      'sg:consent': JSON.stringify({
         status: 'opted-in',
         updatedAt: '2024-01-01T00:00:00.000Z',
         policyVersion: '1.0',
