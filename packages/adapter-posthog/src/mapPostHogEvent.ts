@@ -56,11 +56,21 @@ export interface MapPostHogExceptionOptions {
 export function mapPostHogPageview(
   props: PostHogProps,
 ): { name: string; screenProps: Record<string, unknown> } | null {
-  // Priority: RN $screen_name > web $pathname > full $current_url
+  // Priority: RN $screen_name > web $pathname > pathname extracted from $current_url.
+  // Never use the full $current_url as the name — query params may contain OAuth
+  // codes, password-reset tokens, or other sensitive values.
+  let urlPathname: string | undefined;
+  if (typeof props.$current_url === 'string' && !props.$pathname) {
+    try {
+      urlPathname = new URL(props.$current_url as string).pathname;
+    } catch {
+      // Unparseable URL — omit rather than leak raw string
+    }
+  }
   const name =
     (props.$screen_name as string | undefined) ??
     (props.$pathname as string | undefined) ??
-    (props.$current_url as string | undefined);
+    urlPathname;
 
   if (!name) return null;
 

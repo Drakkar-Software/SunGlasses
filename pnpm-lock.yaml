@@ -209,6 +209,25 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.6.0)(happy-dom@15.11.7)(lightningcss@1.27.0)(terser@5.46.1)
 
+  packages/adapter-starfish:
+    dependencies:
+      '@drakkar.software/sunglasses-core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@drakkar.software/sunglasses-tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.9)(tsx@4.22.4)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.6.0)(happy-dom@15.11.7)(lightningcss@1.27.0)(terser@5.46.1)
+
   packages/core:
     devDependencies:
       '@drakkar.software/sunglasses-tsconfig':

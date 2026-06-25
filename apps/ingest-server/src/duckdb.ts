@@ -42,7 +42,7 @@ export async function initDb(): Promise<void> {
       distinct_id  VARCHAR NOT NULL,
       anonymous_id VARCHAR NOT NULL,
       ts           VARCHAR NOT NULL,
-      message_id   VARCHAR NOT NULL,
+      message_id   VARCHAR NOT NULL UNIQUE,
       properties   VARCHAR NOT NULL,
       context      VARCHAR NOT NULL,
       received_at  VARCHAR NOT NULL,
@@ -56,9 +56,12 @@ export async function initDb(): Promise<void> {
 
   // Set up S3 credentials. If no explicit key/secret, fall back to the
   // credential_chain (IAM role, instance profile, ~/.aws/credentials, etc.).
+  // Escape all credential values before embedding in SQL literals.
+  const sqlEscape = (s: string) => s.replace(/'/g, "''");
   if (AWS_KEY_ID && AWS_SECRET) {
+    const endpointHost = ENDPOINT_URL.replace(/^https?:\/\//, '');
     const endpointClause = ENDPOINT_URL
-      ? `, ENDPOINT '${ENDPOINT_URL.replace(/^https?:\/\//, '')}'`
+      ? `, ENDPOINT '${sqlEscape(endpointHost)}'`
       : '';
     const useSSL = ENDPOINT_URL
       ? `, USE_SSL ${ENDPOINT_URL.startsWith('https') ? 'true' : 'false'}`
@@ -66,9 +69,9 @@ export async function initDb(): Promise<void> {
     await _conn.run(`
       CREATE OR REPLACE SECRET sg_s3 (
         TYPE       s3,
-        KEY_ID     '${AWS_KEY_ID}',
-        SECRET     '${AWS_SECRET}',
-        REGION     '${AWS_REGION}'
+        KEY_ID     '${sqlEscape(AWS_KEY_ID)}',
+        SECRET     '${sqlEscape(AWS_SECRET)}',
+        REGION     '${sqlEscape(AWS_REGION)}'
         ${endpointClause}
         ${useSSL}
       )
@@ -79,7 +82,7 @@ export async function initDb(): Promise<void> {
       CREATE OR REPLACE SECRET sg_s3 (
         TYPE     s3,
         PROVIDER credential_chain,
-        REGION   '${AWS_REGION}'
+        REGION   '${sqlEscape(AWS_REGION)}'
       )
     `);
   }
@@ -117,8 +120,11 @@ export async function stageBatch(rows: EventRow[]): Promise<void> {
     )
     .join(',');
 
+  // ON CONFLICT (message_id) DO NOTHING deduplicates retried batches:
+  // if HttpStorageAdapter retries after a timeout where the server already
+  // staged the events, duplicates are silently skipped.
   await conn().run(`
-    INSERT INTO events_staging
+    INSERT OR IGNORE INTO events_staging
       (event_type, event, distinct_id, anonymous_id, ts, message_id,
        properties, context, received_at, dt)
     VALUES ${valuesClauses}

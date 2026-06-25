@@ -58,7 +58,10 @@ app.post<{ Body: BatchBody }>(INGEST_PATH, async (req, reply) => {
   }
 
   try {
-    const rows = body.batch.map((event) => toRow(event, body.sentAt));
+    // Stamp received_at server-side so it reflects actual ingest time,
+    // not the client-provided sentAt (which can be skewed or manipulated).
+    const receivedAt = new Date().toISOString();
+    const rows = body.batch.map((event) => toRow(event, receivedAt));
     await stageBatch(rows);
   } catch (err) {
     // 503 so the client retries — events stay safely in the SDK queue.

@@ -17,11 +17,15 @@ function InnerLayout(): React.ReactElement {
   return <Stack />;
 }
 
-/** Minimal dev-only sink: logs each batch to the RN console. */
+/** Minimal dev-only sink: logs batch count and anonymous IDs to the RN console.
+ *  Privacy: never logs distinctId, properties, or context. */
 const devAdapter: IAnalyticsAdapter = {
   async send(batch: ReadonlyArray<SunglassesEvent>): Promise<void> {
     // eslint-disable-next-line no-console
-    console.log('[sunglasses]', batch);
+    console.log(
+      `[sunglasses] ${batch.length} event(s)`,
+      batch.map((e) => ({ type: e.type, event: e.event, anonymousId: e.anonymousId })),
+    );
   },
 };
 

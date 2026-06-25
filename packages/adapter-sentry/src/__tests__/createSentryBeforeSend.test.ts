@@ -159,17 +159,17 @@ describe('createSentryBeforeSend', () => {
     expect(client.capture).not.toHaveBeenCalled();
   });
 
-  it('still returns the event to Sentry when ignorePattern matches', () => {
+  it('still returns the event to Sentry when ignorePattern matches', async () => {
     const beforeSend = createSentryBeforeSend(client, {
       ignorePatterns: [/ResizeObserver/],
     });
     const event = makeSentryEvent('ResizeObserver loop limit exceeded');
     const result = beforeSend(event, null);
 
-    expect(result).toBe(event);
+    await expect(result).resolves.toBe(event);
   });
 
-  it('forwards to originalBeforeSend and returns its result', () => {
+  it('forwards to originalBeforeSend and returns its result', async () => {
     const modifiedEvent = { ...makeSentryEvent(), tags: { env: 'test' } };
     const original = vi.fn(() => modifiedEvent);
 
@@ -178,7 +178,7 @@ describe('createSentryBeforeSend', () => {
     const result = beforeSend(event, null);
 
     expect(original).toHaveBeenCalledWith(event, null);
-    expect(result).toBe(modifiedEvent);
+    await expect(result).resolves.toBe(modifiedEvent);
     expect(client.capture).toHaveBeenCalledOnce();
   });
 
@@ -202,11 +202,11 @@ describe('createSentryBeforeSend', () => {
     expect(client.capture).not.toHaveBeenCalled();
   });
 
-  it('returns null to Sentry when suppressSentrySend is true', () => {
+  it('returns null to Sentry when suppressSentrySend is true', async () => {
     const beforeSend = createSentryBeforeSend(client, { suppressSentrySend: true });
     const result = beforeSend(makeSentryEvent(), null);
 
-    expect(result).toBeNull();
+    await expect(result).resolves.toBeNull();
   });
 
   it('still captures to SunGlasses when suppressSentrySend is true', () => {
@@ -218,18 +218,18 @@ describe('createSentryBeforeSend', () => {
     }));
   });
 
-  it('suppressSentrySend + ignorePattern: returns null and skips SunGlasses capture', () => {
+  it('suppressSentrySend + ignorePattern: returns null and skips SunGlasses capture', async () => {
     const beforeSend = createSentryBeforeSend(client, {
       suppressSentrySend: true,
       ignorePatterns: [/ResizeObserver/],
     });
     const result = beforeSend(makeSentryEvent('ResizeObserver loop limit exceeded'), null);
 
-    expect(result).toBeNull();
+    await expect(result).resolves.toBeNull();
     expect(client.capture).not.toHaveBeenCalled();
   });
 
-  it('async originalBeforeSend: returns its Promise and still captures synchronously', async () => {
+  it('async originalBeforeSend: awaits result before capturing; skips when null', async () => {
     const modifiedEvent = { ...makeSentryEvent(), tags: { env: 'test' } };
     const original = vi.fn(async () => modifiedEvent);
 
@@ -237,10 +237,20 @@ describe('createSentryBeforeSend', () => {
     const event = makeSentryEvent();
     const result = beforeSend(event, null);
 
-    // capture fires synchronously (does not await originalBeforeSend)
-    expect(client.capture).toHaveBeenCalledOnce();
-    // returned value is the Promise from originalBeforeSend
+    // capture has not fired yet — it awaits originalBeforeSend first
+    expect(client.capture).not.toHaveBeenCalled();
+    // after settling, originalBeforeSend returned non-null → capture fires
     await expect(result).resolves.toBe(modifiedEvent);
+    expect(client.capture).toHaveBeenCalledOnce();
+  });
+
+  it('async originalBeforeSend returning null: skips SunGlasses capture', async () => {
+    const original = vi.fn(async () => null);
+
+    const beforeSend = createSentryBeforeSend(client, {}, original);
+    await beforeSend(makeSentryEvent(), null);
+
+    expect(client.capture).not.toHaveBeenCalled();
   });
 
   it('handles events with no exception values gracefully', () => {

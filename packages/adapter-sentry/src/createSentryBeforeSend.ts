@@ -86,11 +86,15 @@ export function createSentryBeforeSend(
     suppressSentrySend = false,
   } = config;
 
-  return (event: Event, hint: EventHint): Event | null | Promise<Event | null> => {
-    // Run the original beforeSend first so Sentry's own processing is unaffected.
-    const sentryResult = originalBeforeSend ? originalBeforeSend(event, hint) : event;
+  return async (event: Event, hint: EventHint): Promise<Event | null> => {
+    // Await the original beforeSend (it may be async). If it returns null it
+    // explicitly dropped the event — respect that by skipping client.capture().
+    const sentryResult = originalBeforeSend ? await originalBeforeSend(event, hint) : event;
     // suppressSentrySend: return null so Sentry does not transmit the event.
     const result = suppressSentrySend ? null : sentryResult;
+
+    // originalBeforeSend dropped the event — don't capture in SunGlasses either.
+    if (sentryResult === null) return result;
 
     const exc = event.exception?.values?.[0];
     const rawMessage = exc?.value ?? '';

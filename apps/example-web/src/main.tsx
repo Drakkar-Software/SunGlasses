@@ -18,11 +18,15 @@ import { App } from './App.js';
  *   debug: true → logs internal SDK messages to the console (remove in production!).
  */
 
-/** Minimal dev-only sink: pretty-prints each batch to the browser console. */
+/** Minimal dev-only sink: logs batch count and anonymous IDs to the browser console.
+ *  Privacy: never logs distinctId, properties, or context. */
 const devAdapter: IAnalyticsAdapter = {
   async send(batch: ReadonlyArray<SunglassesEvent>): Promise<void> {
     // eslint-disable-next-line no-console
-    console.log('[sunglasses]', batch);
+    console.log(
+      `[sunglasses] ${batch.length} event(s)`,
+      batch.map((e) => ({ type: e.type, event: e.event, anonymousId: e.anonymousId })),
+    );
   },
 };
 

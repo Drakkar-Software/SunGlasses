@@ -203,8 +203,10 @@ export function createPostHogBeforeSend(
       if (systemEvents?.pageview) {
         const mapped = mapPostHogPageview(props);
         if (mapped) client.screen(mapped.name, mapped.screenProps);
+        return result; // consumed by screen() — don't also forward as generic capture
       }
-      return result;
+      // No screen() handler — fall through to generic capture only when opted in.
+      if (!includeSystemEvents) return result;
     }
 
     // $exception → client.capture('$error', ErrorEventProperties)
@@ -215,8 +217,10 @@ export function createPostHogBeforeSend(
           maxStackFrames: systemEvents.maxStackFrames,
         });
         if (mapped) client.capture('$error', mapped);
+        return result; // consumed by $error capture — don't also forward as generic capture
       }
-      return result;
+      // No exception handler — fall through to generic capture only when opted in.
+      if (!includeSystemEvents) return result;
     }
 
     // Other $-prefixed system events: forward verbatim only if explicitly listed

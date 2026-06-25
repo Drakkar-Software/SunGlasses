@@ -27,7 +27,8 @@ export interface EventRow {
  * here — but these fields must never appear in logs.
  */
 export function toRow(event: SunglassesEvent, receivedAt: string): EventRow {
-  const ts = event.timestamp;
+  // Guard against non-SDK clients that omit timestamp; fall back to receivedAt.
+  const ts = typeof event.timestamp === 'string' && event.timestamp ? event.timestamp : receivedAt;
   const dt = ts.slice(0, 10); // 'YYYY-MM-DD'
 
   return {
