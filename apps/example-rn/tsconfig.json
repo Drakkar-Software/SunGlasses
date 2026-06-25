@@ -6,8 +6,7 @@
       "@drakkar.software/sunglasses-core": ["../../packages/core/src/index.ts"],
       "@drakkar.software/sunglasses-react-native": ["../../packages/react-native/src/index.ts"],
       "@drakkar.software/sunglasses-storage-async-storage": ["../../packages/storage-async-storage/src/index.ts"],
-      "@drakkar.software/sunglasses-storage-http": ["../../packages/storage-http/src/index.ts"],
-      "@drakkar.software/sunglasses-adapter-starfish": ["../../packages/adapter-starfish/src/index.ts"]
+      "@drakkar.software/sunglasses-storage-http": ["../../packages/storage-http/src/index.ts"]
     }
   }
 }

@@ -44,7 +44,6 @@ export type {
   ConsentHistoryEntry,
   CleanupConfig,
   HttpAdapterConfig,
-  StarfishAdapterConfig,
   ScreenTrackingOptions,
   EventCountPeriod,
   IEventCounter,

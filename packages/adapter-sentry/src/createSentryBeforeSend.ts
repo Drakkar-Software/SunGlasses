@@ -1,31 +1,5 @@
+import type { Event, EventHint } from '@sentry/core';
 import type { ISunglassesClient, ErrorEventProperties } from '@drakkar.software/sunglasses-core';
-
-// ---------------------------------------------------------------------------
-// Minimal Sentry-compatible type definitions
-// We define only the fields we need — no @sentry/* runtime dependency required.
-// These shapes match @sentry/types v7+ and @sentry/react-native v5+.
-// ---------------------------------------------------------------------------
-
-/** Minimal mirror of the Sentry `Event` shape we care about. */
-interface SentryLikeEvent {
-  exception?: {
-    values?: Array<{
-      type?: string;
-      value?: string;
-      stacktrace?: {
-        frames?: Array<{
-          filename?: string;
-          lineno?: number;
-          function?: string;
-        }>;
-      };
-    }>;
-  };
-  level?: string;
-  tags?: Record<string, string | number | boolean>;
-}
-
-type SentryBeforeSendResult = SentryLikeEvent | null | Promise<SentryLikeEvent | null>;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -101,8 +75,8 @@ export interface SentryBridgeConfig {
 export function createSentryBeforeSend(
   client: ISunglassesClient,
   config: SentryBridgeConfig = {},
-  originalBeforeSend?: (event: SentryLikeEvent, hint: unknown) => SentryBeforeSendResult,
-): (event: SentryLikeEvent, hint: unknown) => SentryBeforeSendResult {
+  originalBeforeSend?: (event: Event, hint: EventHint) => Event | null | Promise<Event | null>,
+): (event: Event, hint: EventHint) => Event | null | Promise<Event | null> {
   const {
     includeStack = false,
     maxStackFrames = 5,
@@ -112,7 +86,7 @@ export function createSentryBeforeSend(
     suppressSentrySend = false,
   } = config;
 
-  return (event: SentryLikeEvent, hint: unknown): SentryBeforeSendResult => {
+  return (event: Event, hint: EventHint): Event | null | Promise<Event | null> => {
     // Run the original beforeSend first so Sentry's own processing is unaffected.
     const sentryResult = originalBeforeSend ? originalBeforeSend(event, hint) : event;
     // suppressSentrySend: return null so Sentry does not transmit the event.

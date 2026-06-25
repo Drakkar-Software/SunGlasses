@@ -27,10 +27,8 @@ Track screen views, button taps, and custom events — with built-in PII sanitiz
 | `@drakkar.software/sunglasses-storage-localstorage` | Web | localStorage persistence adapter |
 | `@drakkar.software/sunglasses-storage-async-storage` | React Native | AsyncStorage persistence adapter |
 | `@drakkar.software/sunglasses-storage-http` | Any | Batched HTTP push output adapter |
-| `@drakkar.software/sunglasses-adapter-starfish` | Any | Drakkar-Software/Starfish document-sync adapter |
-| `@drakkar.software/sunglasses-adapter-console` | Any | Development adapter — pretty-prints events to console |
 | `@drakkar.software/sunglasses-adapter-sentry` | Web / RN | Sentry `beforeSend` bridge — captures errors as `$error` events |
-| `@drakkar.software/sunglasses-adapter-posthog` | Web / RN | PostHog `before_send` bridge — forwards events to SunGlasses |
+| `@drakkar.software/sunglasses-adapter-posthog` | Web / RN | PostHog `before_send` bridge — maps autocaptured events to SunGlasses |
 
 ## Quickstart — Web (React + Vite)
 
@@ -295,27 +293,6 @@ const myMiddleware: IMiddleware = {
 SunglassesCore.create({ middleware: [myMiddleware], ... });
 ```
 
-## Starfish Integration
-
-[Starfish](https://github.com/Drakkar-Software/Starfish) is a document-sync backend developed by Drakkar-Software.
-
-```ts
-import { StarfishAnalyticsAdapter } from '@drakkar.software/sunglasses-adapter-starfish';
-
-SunglassesCore.create({
-  adapters: [
-    new StarfishAnalyticsAdapter({
-      serverUrl: 'https://sync.example.com',
-      storagePath: 'analytics/{identity}/events',
-      authToken: 'your-bearer-token',
-    }),
-  ],
-  ...
-});
-```
-
-Events are stored as a JSON document per identity at `storagePath`. The adapter uses Starfish's optimistic locking (`baseHash`) to handle concurrent writes safely.
-
 ## Event Frequency Counting
 
 Track how many times each event fires, bucketed by day, week, month, or all-time. Counts survive app restarts.
@@ -349,7 +326,7 @@ When `FrequencyMiddleware` is active, these properties are added to each event:
 
 ## Cleanup After Flush
 
-Automatically prune old events from remote stores after each successful flush. Currently implemented by `StarfishAnalyticsAdapter`.
+Automatically prune old events from remote stores after each successful flush. Implement `cleanupAfterFlush` on any custom `IAnalyticsAdapter` to opt in.
 
 ```ts
 SunglassesCore.create({
@@ -357,9 +334,7 @@ SunglassesCore.create({
     maxAgeMs: 30 * 24 * 60 * 60 * 1000,  // Remove events older than 30 days
     maxEventsPerIdentity: 1000,            // Keep at most 1000 events per user
   },
-  adapters: [
-    new StarfishAnalyticsAdapter({ ... }),
-  ],
+  adapters: [myAdapter],
   ...
 });
 ```
@@ -544,14 +519,70 @@ posthog.init(key, {
 });
 ```
 
+### Replace custom screen + error tracking with PostHog autocapture (local-only shim)
+
+Use posthog-js purely as a capture engine — nothing is sent to PostHog servers.
+`HttpStorageAdapter` (pointing at your own endpoint) is the sole event sink.
+
+```ts
+import { createPostHogBeforeSend } from '@drakkar.software/sunglasses-adapter-posthog';
+
+posthog.init('phc_xxx', {
+  persistence: 'memory',            // PostHog stores nothing locally
+  disable_session_recording: true,
+  capture_pageview: 'history_change', // SPA pageviews (web)
+  capture_exceptions: true,          // global window.onerror + unhandledrejection
+  before_send: createPostHogBeforeSend(client, {
+    suppressPostHogSend: true,        // nothing sent to PostHog Cloud
+    systemEvents: {
+      pageview: true,   // $pageview/$screen → client.screen()
+      exception: true,  // $exception → client.capture('$error', …)
+      // forward: ['$web_vitals', '$pageleave'],  // opt-in other $ events
+    },
+  }),
+});
+
+// SunGlasses client sends everything to your own endpoint:
+const client = await SunglassesCore.create({
+  adapters: [new HttpStorageAdapter({ endpoint: 'https://ingest.example.com/batch' })],
+  ...
+});
+```
+
+With `suppressPostHogSend: true` + `persistence: 'memory'`, PostHog makes no network requests and persists nothing — SunGlasses' consent gate still governs whether bridged events are recorded.
+
+> **Not bridgeable** (require PostHog Cloud): session replay, heatmaps, feature flag evaluation.
+
+> ⚠️ `forward: ['$autocapture']` captures DOM element content — review PiiSanitizer config before enabling in production.
+
+### Keep `SunglassesErrorBoundary` alongside PostHog exception autocapture
+
+PostHog's global handlers do **not** catch React render-phase errors. Wire both:
+
+```tsx
+import { SunglassesErrorBoundary } from '@drakkar.software/sunglasses-adapter-sentry';
+
+// posthog captures unhandled ($error_handled: false)
+// boundary catches render errors ($error_handled: true)
+<SunglassesErrorBoundary client={client} fallback={<ErrorPage />}>
+  <App />
+</SunglassesErrorBoundary>
+```
+
 ### Configuration
 
 ```ts
 createPostHogBeforeSend(client, {
-  suppressPostHogSend: false,       // return null from before_send — PostHog won't transmit
-  includeSystemEvents: false,       // skip $pageview, $pageleave etc. — default false
+  suppressPostHogSend: false,         // return null from before_send — PostHog won't transmit
+  systemEvents: {
+    pageview: false,                  // $pageview/$screen → client.screen()
+    exception: false,                 // $exception → client.capture('$error', …)
+    includeStack: false,              // include $error_stack (opt-in, privacy)
+    maxStackFrames: 5,
+    forward: [],                      // other $-events to forward verbatim
+  },
   ignoreEventTypes: ['survey_shown'], // explicit block list
-  ignorePatterns: [/^debug_/],      // skip by regex on event name
+  ignorePatterns: [/^debug_/],        // skip by regex on event name
   transformEventName: (n) => n.replace(/_/g, ' '), // rename events
   beforeCapture: (name, props) => ({ ...props, source: 'posthog' }), // transform or drop (null)
 });
@@ -571,7 +602,6 @@ createPostHogBeforeSend(client, {
 | All adapters fail | Events stay in queue; no data is lost |
 | Storage quota exceeded | Write silently ignored; queue state may be inconsistent |
 | Network timeout (HTTP adapter) | Exponential backoff retry; discard after `maxRetries` |
-| Starfish 409 conflict | Pull → re-merge → re-push, up to `maxRetries` |
 | Middleware throws | Event is dropped; error is logged; pipeline continues |
 
 ## Troubleshooting
@@ -680,33 +710,22 @@ typed.capture('button_clicked', { buttonId: 'cta', screen: 'home' }); // ✓
 > ```
 > Use `createLazyClient` instead.
 
-## Development — ConsoleAdapter
+## Development Adapter
 
-Pretty-print events to the console during development:
+For quick local testing, wire an inline adapter that logs batches to the console. No package needed:
 
 ```ts
-import { ConsoleAdapter } from '@drakkar.software/sunglasses-adapter-console';
+const devAdapter = {
+  async send(batch) { console.log('[sunglasses]', batch); },
+};
 
 SunglassesCore.create({
-  adapters: [
-    new ConsoleAdapter({ verbose: false }),
-    // add your real adapter here for production
-  ],
+  adapters: [devAdapter],
+  // Replace with HttpStorageAdapter for production:
+  // adapters: [new HttpStorageAdapter({ endpoint: 'https://...' })],
   ...
 });
 ```
-
-Output example:
-```
-[SunGlasses] capture "button_clicked" @ 2024-01-15T10:30:00.000Z
-  ┌──────────┬─────────┐
-  │ buttonId │ cta     │
-  │ screen   │ home    │
-  └──────────┴─────────┘
-  anonymousId: 550e8400-e29b-41d4-a716-446655440000
-```
-
-Options: `prefix`, `verbose` (full JSON), `onlyFor` (event filter list).
 
 ## Consent Versioning (GDPR)
 
@@ -768,36 +787,6 @@ await client.clearLocalArchive({ maxAgeMs: 30 * 24 * 60 * 60 * 1000 }); // keep 
 // Clear the entire archive
 await client.clearLocalArchive();
 ```
-
-## Starfish — Rotating Documents
-
-By default, `StarfishAnalyticsAdapter` maintains a single growing document per identity. For high-volume apps or when you want smaller, isolated push documents, enable path rotation:
-
-```ts
-import { StarfishAnalyticsAdapter } from '@drakkar.software/sunglasses-adapter-starfish';
-import { LocalStorageAdapter } from '@drakkar.software/sunglasses-storage-localstorage';
-
-const storage = new LocalStorageAdapter();
-
-new StarfishAnalyticsAdapter({
-  serverUrl: 'https://sync.example.com',
-  storagePath: 'analytics/{identity}/events',
-  authToken: 'your-token',
-
-  // Each successful push creates a new file: events-0001, events-0002, ...
-  rotatePathOnSuccess: true,
-  pathStorage: storage,  // persists the generation counter across restarts
-})
-```
-
-With rotation:
-- **No pull step** — each push is always a fresh document (faster, no conflict resolution)
-- **Small files** — each document contains only the events from one flush batch
-- **Complete history** — enable `enableLocalArchive: true` to keep all events locally
-
-Without rotation (default):
-- Single growing document per identity, merged on each push
-- Optimistic locking (409 conflict resolution) ensures consistency
 
 ## Contributing
 

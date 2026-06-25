@@ -26,8 +26,21 @@
   "dependencies": {
     "@drakkar.software/sunglasses-core": "workspace:*"
   },
+  "peerDependencies": {
+    "posthog-js": ">=1.187.0",
+    "posthog-react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "posthog-js": {
+      "optional": true
+    },
+    "posthog-react-native": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@drakkar.software/sunglasses-tsconfig": "workspace:*",
+    "@posthog/core": "^1.37.3",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

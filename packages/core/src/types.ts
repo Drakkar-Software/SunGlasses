@@ -25,7 +25,7 @@ export interface IStorageAdapter {
 
 /**
  * Output destination that receives batches of sanitized, consented events.
- * Implementations: HttpStorageAdapter, StarfishAnalyticsAdapter, console (debug).
+ * Implementations include `HttpStorageAdapter` and any custom adapter.
  */
 export interface IAnalyticsAdapter {
   /**
@@ -41,7 +41,7 @@ export interface IAnalyticsAdapter {
   /**
    * Called after a successful flush with the events that were delivered.
    * Use this to archive or remove old events from the remote store.
-   * Implement this in adapters that accumulate data (e.g. StarfishAnalyticsAdapter).
+   * Implement in adapters that accumulate data and need post-flush pruning.
    */
   cleanupAfterFlush?(delivered: ReadonlyArray<SunglassesEvent>, config: CleanupConfig): Promise<void>;
 }
@@ -455,59 +455,6 @@ export interface HttpAdapterConfig {
   retryMaxDelayMs?: number;
   /** Request timeout in ms. Default: 10_000. */
   timeout?: number;
-}
-
-// ---------------------------------------------------------------------------
-// Starfish Adapter config (re-exported for consumers)
-// ---------------------------------------------------------------------------
-
-export interface StarfishAdapterConfig {
-  /** Base URL of the Starfish sync server, e.g. https://sync.example.com */
-  serverUrl: string;
-  /**
-   * Path template for the event document.
-   * Use `{identity}` as a placeholder — it is replaced with `distinctId ?? anonymousId`.
-   * Example: "analytics/{identity}/events"
-   */
-  storagePath: string;
-  /** Bearer token for Authorization header. */
-  authToken?: string;
-  /** Max retries on 409 Conflict (optimistic locking). Default: 3. */
-  maxRetries?: number;
-  /**
-   * When true, each successful push creates a **new** Starfish document using
-   * a rotating path suffix (e.g. `events-0001`, `events-0002`…).
-   *
-   * Benefits:
-   * - No pull step needed — each push is always a fresh document
-   * - No growing single document — each file stays small
-   * - Old documents accumulate on Starfish (combine with `cleanupAfterFlush` to prune)
-   *
-   * Requires `pathStorage` to persist the current path generation counter.
-   * Works best with `enableLocalArchive: true` in `SunglassesConfig` so the
-   * complete event history is kept locally even across many push generations.
-   */
-  rotatePathOnSuccess?: boolean;
-  /**
-   * Storage adapter used to persist the current path generation counter.
-   * Required when `rotatePathOnSuccess: true`.
-   * Can be the same adapter as `SunglassesConfig.storage`.
-   */
-  pathStorage?: IStorageAdapter;
-  /**
-   * When `true`, events are pushed directly without a prior pull.
-   * No merge, no optimistic locking, no conflict detection.
-   *
-   * Use this for Starfish collections configured with `queueOnly: true` —
-   * the server ignores `baseHash` and returns no stored data on pull,
-   * so a pull round-trip is always wasted.
-   *
-   * On push failure the adapter **throws**, allowing SunglassesCore to keep
-   * events in the local queue and retry on the next flush interval.
-   *
-   * Cannot be combined with `rotatePathOnSuccess`.
-   */
-  pushOnly?: boolean;
 }
 
 // ---------------------------------------------------------------------------

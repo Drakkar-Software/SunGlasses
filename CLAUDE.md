@@ -13,8 +13,6 @@ SunGlasses is a privacy-first event tracking library distributed as a TypeScript
 @drakkar.software/sunglasses-storage-localstorage  localStorage adapter (web)
 @drakkar.software/sunglasses-storage-async-storage AsyncStorage adapter (React Native)
 @drakkar.software/sunglasses-storage-http          Batched HTTP push adapter (output destination)
-@drakkar.software/sunglasses-adapter-starfish      Starfish document-sync adapter
-@drakkar.software/sunglasses-adapter-console       Dev-only console pretty-printer adapter
 @drakkar.software/sunglasses-tsconfig              Shared TypeScript configs (private)
 ```
 
@@ -27,8 +25,9 @@ Package dependency graph (runtime, not devDeps):
 ├── @drakkar.software/sunglasses-storage-localstorage
 ├── @drakkar.software/sunglasses-storage-async-storage
 ├── @drakkar.software/sunglasses-storage-http
-├── @drakkar.software/sunglasses-adapter-starfish
-└── @drakkar.software/sunglasses-adapter-console
+├── @drakkar.software/sunglasses-adapter-posthog
+├── @drakkar.software/sunglasses-adapter-sentry
+└── (your own adapters via IAnalyticsAdapter)
 ```
 
 ## Prerequisites

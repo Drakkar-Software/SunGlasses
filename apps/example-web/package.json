@@ -15,8 +15,6 @@
     "@drakkar.software/sunglasses-react": "workspace:*",
     "@drakkar.software/sunglasses-storage-http": "workspace:*",
     "@drakkar.software/sunglasses-storage-localstorage": "workspace:*",
-    "@drakkar.software/sunglasses-adapter-starfish": "workspace:*",
-    "@drakkar.software/sunglasses-adapter-console": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

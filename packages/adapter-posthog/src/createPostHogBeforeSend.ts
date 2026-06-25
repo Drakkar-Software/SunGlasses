@@ -1,23 +1,65 @@
+import type { CaptureEvent, BeforeSendFn } from '@posthog/core';
 import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
-
-// ---------------------------------------------------------------------------
-// Minimal PostHog-compatible type definitions
-// We define only the fields we need — no posthog-js runtime dependency required.
-// These shapes match posthog-js v1.187+ and posthog-react-native (posthog-js monorepo).
-// ---------------------------------------------------------------------------
-
-/** Minimal mirror of the PostHog `CaptureResult` passed to `before_send`. */
-interface PostHogLikeEvent {
-  event_type: string;
-  properties?: Record<string, unknown>;
-  timestamp?: string;
-}
-
-type PostHogBeforeSendResult = PostHogLikeEvent | null;
+import {
+  mapPostHogPageview,
+  mapPostHogException,
+  type MapPostHogExceptionOptions,
+} from './mapPostHogEvent.js';
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/**
+ * Opt-in routing for PostHog autocaptured system events (`$`-prefixed).
+ *
+ * By default the bridge drops all system events to keep the SunGlasses event
+ * stream clean. Use this block to map specific system events into the
+ * SunGlasses taxonomy instead.
+ */
+export interface PostHogSystemEventConfig extends MapPostHogExceptionOptions {
+  /**
+   * Route PostHog `$pageview` (web) / `$screen` (React Native) events to
+   * `client.screen()`, mapping props to `{ $path, $url, $title?, $referrer? }`.
+   *
+   * Equivalent to wiring `useScreenTracking` (web) or
+   * `useExpoRouterScreenTracking` (RN), but driven by PostHog autocapture.
+   *
+   * Default: `false`.
+   */
+  pageview?: boolean;
+
+  /**
+   * Route PostHog `$exception` events to `client.capture('$error', props)`,
+   * mapping to `ErrorEventProperties` — the same shape as `createSentryBeforeSend`.
+   *
+   * Requires enabling PostHog exception autocapture:
+   * ```ts
+   * posthog.init(key, {
+   *   capture_exceptions: true,
+   *   before_send: createPostHogBeforeSend(client, { systemEvents: { exception: true } }),
+   * });
+   * ```
+   *
+   * Default: `false`.
+   */
+  exception?: boolean;
+
+  /**
+   * Other `$`-prefixed PostHog system event names to forward verbatim via
+   * `client.capture()`. Useful for events like `'$web_vitals'`,
+   * `'$autocapture'`, or `'$pageleave'`.
+   *
+   * ⚠️ `$autocapture` events capture DOM element content — review PiiSanitizer
+   * configuration before enabling in production.
+   *
+   * Default: `[]`.
+   *
+   * @example
+   * forward: ['$web_vitals', '$pageleave']
+   */
+  forward?: string[];
+}
 
 /**
  * Configuration for the PostHog → SunGlasses bridge.
@@ -36,13 +78,38 @@ export interface PostHogBridgeConfig {
    * Include PostHog auto-captured system events (`$pageview`, `$pageleave`,
    * `$autocapture`, `$identify`, etc.). Default: `false` — only forward
    * user-defined events. Use `client.identify()` directly for identity data.
+   *
+   * @deprecated Prefer `systemEvents.forward` for explicit opt-in, or
+   * `systemEvents.pageview` / `systemEvents.exception` for mapped routing.
+   * This option remains for backwards compatibility.
    */
   includeSystemEvents?: boolean;
 
   /**
-   * Explicit list of `event_type` values to skip.
+   * Opt-in routing for PostHog autocaptured system events (`$`-prefixed).
+   * Each field selects a specific behaviour; absent fields default to `false`/`[]`.
+   *
+   * These options are evaluated **before** `includeSystemEvents`, so
+   * `$pageview` and `$exception` are always handled by their dedicated mappers
+   * when the relevant flag is set, regardless of `includeSystemEvents`.
+   *
+   * @example
+   * // Use posthog-js as a local-only capture shim — HttpStorageAdapter is the sole sink
+   * posthog.init('phc_xxx', {
+   *   persistence: 'memory',
+   *   capture_exceptions: true,
+   *   before_send: createPostHogBeforeSend(client, {
+   *     suppressPostHogSend: true,
+   *     systemEvents: { pageview: true, exception: true },
+   *   }),
+   * });
+   */
+  systemEvents?: PostHogSystemEventConfig;
+
+  /**
+   * Explicit list of event names to skip.
    * Applied before `ignorePatterns`.
-   * Example: `['$pageview', '$pageleave']`
+   * Example: `['survey_shown']`
    */
   ignoreEventTypes?: string[];
 
@@ -87,9 +154,14 @@ export interface PostHogBridgeConfig {
  *   before_send: createPostHogBeforeSend(sunglassesClient),
  * });
  *
- * // Mode B — SunGlasses only, PostHog as local capture layer
+ * // Mode B — SunGlasses only, PostHog as local capture layer, nothing sent to PostHog
  * posthog.init(key, {
- *   before_send: createPostHogBeforeSend(sunglassesClient, { suppressPostHogSend: true }),
+ *   persistence: 'memory',
+ *   capture_exceptions: true,
+ *   before_send: createPostHogBeforeSend(sunglassesClient, {
+ *     suppressPostHogSend: true,
+ *     systemEvents: { pageview: true, exception: true },
+ *   }),
  * });
  * ```
  *
@@ -101,38 +173,77 @@ export interface PostHogBridgeConfig {
 export function createPostHogBeforeSend(
   client: ISunglassesClient,
   config: PostHogBridgeConfig = {},
-): (event: PostHogLikeEvent) => PostHogBeforeSendResult {
+): BeforeSendFn {
   const {
     suppressPostHogSend = false,
     includeSystemEvents = false,
+    systemEvents,
     ignoreEventTypes = [],
     ignorePatterns = [],
     beforeCapture,
     transformEventName,
   } = config;
 
-  return (event: PostHogLikeEvent): PostHogBeforeSendResult => {
-    const result: PostHogBeforeSendResult = suppressPostHogSend ? null : event;
+  return (event: CaptureEvent | null): CaptureEvent | null => {
+    if (!event) return null;
 
-    const name = event.event_type;
+    // Compute the PostHog-side return value upfront — it never changes.
+    const result: CaptureEvent | null = suppressPostHogSend ? null : event;
 
-    // Filter: system events (start with $) unless opted in
-    if (!includeSystemEvents && name.startsWith('$')) return result;
+    // The event name is `event.event` in the real PostHog SDK type.
+    const name = event.event;
+    const props = event.properties ?? {};
+
+    // ------------------------------------------------------------------
+    // Mapped system-event routing (evaluated before the generic $ filter)
+    // ------------------------------------------------------------------
+
+    // $pageview (web) / $screen (RN) → client.screen()
+    if (name === '$pageview' || name === '$screen') {
+      if (systemEvents?.pageview) {
+        const mapped = mapPostHogPageview(props);
+        if (mapped) client.screen(mapped.name, mapped.screenProps);
+      }
+      return result;
+    }
+
+    // $exception → client.capture('$error', ErrorEventProperties)
+    if (name === '$exception') {
+      if (systemEvents?.exception) {
+        const mapped = mapPostHogException(props, {
+          includeStack: systemEvents.includeStack,
+          maxStackFrames: systemEvents.maxStackFrames,
+        });
+        if (mapped) client.capture('$error', mapped);
+      }
+      return result;
+    }
+
+    // Other $-prefixed system events: forward verbatim only if explicitly listed
+    // or legacy includeSystemEvents is true — then fall through to generic capture.
+    if (name.startsWith('$')) {
+      if (!systemEvents?.forward?.includes(name) && !includeSystemEvents) return result;
+    }
+
+    // ------------------------------------------------------------------
+    // Generic user-event (and opted-in system-event) capture path
+    // ------------------------------------------------------------------
+
     // Filter: explicit ignore list
     if (ignoreEventTypes.includes(name)) return result;
     // Filter: pattern match
     if (ignorePatterns.some((p) => p.test(name))) return result;
 
-    let props: Record<string, unknown> = { ...event.properties };
+    let captureProps: Record<string, unknown> = { ...props };
 
     if (beforeCapture) {
-      const transformed = beforeCapture(name, props);
+      const transformed = beforeCapture(name, captureProps);
       if (transformed === null) return result;
-      props = transformed;
+      captureProps = transformed;
     }
 
     const targetName = transformEventName ? transformEventName(name) : name;
-    client.capture(targetName, props);
+    client.capture(targetName, captureProps);
 
     return result;
   };

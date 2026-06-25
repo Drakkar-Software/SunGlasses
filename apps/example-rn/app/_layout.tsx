@@ -2,10 +2,9 @@ import 'react-native-get-random-values'; // Must be imported before any crypto u
 import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { SunglassesCore } from '@drakkar.software/sunglasses-core';
+import type { ISunglassesClient, IAnalyticsAdapter, SunglassesEvent } from '@drakkar.software/sunglasses-core';
 import { SunglassesProvider, useSunglasses, useExpoRouterScreenTracking } from '@drakkar.software/sunglasses-react-native';
 import { AsyncStorageAdapter } from '@drakkar.software/sunglasses-storage-async-storage';
-import { ConsoleAdapter } from '@drakkar.software/sunglasses-adapter-console';
-import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 
 /**
  * Inner layout component — runs inside the SunglassesProvider context,
@@ -17,6 +16,14 @@ function InnerLayout(): React.ReactElement {
   useExpoRouterScreenTracking(client);
   return <Stack />;
 }
+
+/** Minimal dev-only sink: logs each batch to the RN console. */
+const devAdapter: IAnalyticsAdapter = {
+  async send(batch: ReadonlyArray<SunglassesEvent>): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log('[sunglasses]', batch);
+  },
+};
 
 /**
  * Root layout: bootstrap the SDK, wrap the app in SunglassesProvider.
@@ -31,17 +38,13 @@ export default function RootLayout(): React.ReactElement | null {
   useEffect(() => {
     const storage = new AsyncStorageAdapter();
 
-    // ConsoleAdapter — pretty-prints events during development.
-    // Replace with (or add alongside) HttpStorageAdapter for production.
-    const consoleAdapter = new ConsoleAdapter({ verbose: false });
-
-    // Uncomment to push to a real server:
+    // Replace devAdapter with HttpStorageAdapter for production:
     // const httpAdapter = new HttpStorageAdapter({
     //   endpoint: 'https://your-server.example.com/ingest',
     // });
 
     SunglassesCore.create({
-      adapters: [consoleAdapter /*, httpAdapter */],
+      adapters: [devAdapter /*, httpAdapter */],
       storage,
       defaultOptIn: false,
       platform: 'react-native',

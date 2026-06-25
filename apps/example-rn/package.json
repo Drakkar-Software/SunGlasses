@@ -16,8 +16,6 @@
     "@drakkar.software/sunglasses-react-native": "workspace:*",
     "@drakkar.software/sunglasses-storage-async-storage": "workspace:*",
     "@drakkar.software/sunglasses-storage-http": "workspace:*",
-    "@drakkar.software/sunglasses-adapter-starfish": "workspace:*",
-    "@drakkar.software/sunglasses-adapter-console": "workspace:*",
     "@react-native-async-storage/async-storage": "^2.1.0",
     "expo": "~52.0.0",
     "expo-router": "~4.0.0",
