@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-06-25
+
+### Added
+
+- **`@drakkar.software/sunglasses-adapter-starfish`** — completely new batch-push implementation; pushes events as JSON batches to a Starfish events collection encoded to Parquet server-side by the companion `starfish-events` plugin. Replaces the old document-sync adapter (see Removed).
+- **`systemEvents` config** (`@drakkar.software/sunglasses-adapter-posthog`): maps PostHog system events to SunGlasses equivalents — `$pageview`/`$screen` → `client.screen()`, `$exception` → `client.capture('$error', ErrorEventProperties)`, `forward` passes whitelisted `$`-prefixed events through verbatim.
+- **`mapPostHogPageview` / `mapPostHogException`** helpers — new named exports from `@drakkar.software/sunglasses-adapter-posthog`.
+- **Real PostHog types** (`@drakkar.software/sunglasses-adapter-posthog`): uses types from `@posthog/core` via optional peerDep + devDep — zero runtime weight.
+- **Real Sentry types** (`@drakkar.software/sunglasses-adapter-sentry`): uses types from `@sentry/core` via optional peerDep — zero runtime weight.
+- **`apps/ingest-server`**: new Fastify + DuckDB ingest server; accepts `POST {batch, sentAt}` from `HttpStorageAdapter`, stages events in a persistent DuckDB staging table, and flushes to S3 as date-partitioned Parquet (`COPY … FORMAT PARQUET, PARTITION_BY (dt)`). Graceful shutdown flushes staged rows before exit; returns `503` on staging failure so the SDK retries. Includes query examples for totals, screen paths, errors, DAU, and day-7 retention.
+
+### Fixed
+
+- **`createPostHogBeforeSend`** (`@drakkar.software/sunglasses-adapter-posthog`): fix latent bug where the captured event field was `event_type` instead of `event`.
+- **`createPostHogBeforeSend`**: fix `$pageview` / `$screen` / `$exception` early-return that always bypassed the `includeSystemEvents` flag, regardless of config.
+- **`mapPostHogEvent`**: extract `pathname` from `$current_url` instead of using the full URL as the screen name — query params may contain OAuth tokens or password-reset codes.
+- **`createSentryBeforeSend`** (`@drakkar.software/sunglasses-adapter-sentry`): made async; now awaits `originalBeforeSend` and skips capture when it returns `null` (i.e. Sentry itself dropped the event).
+- **`ingest-server`**: stamp `received_at` server-side rather than trusting client-provided `sentAt`.
+- **`ingest-server`**: null-guard `event.timestamp`, fall back to `receivedAt` when absent.
+- **`ingest-server`**: escape AWS `KEY_ID`, `SECRET`, `REGION`, and `ENDPOINT` in `CREATE SECRET` SQL to prevent injection.
+- **`ingest-server`**: add `UNIQUE` constraint on `message_id` + `INSERT OR IGNORE` for server-side deduplication.
+- **devAdapter** (example apps): log only event count and `anonymousId`, never the full event batch.
+
+### Removed
+
+- **`@drakkar.software/sunglasses-adapter-console`** — removed; example apps now use an inline `devAdapter` that logs only count + `anonymousId`.
+- **`@drakkar.software/sunglasses-adapter-starfish`** (old document-sync implementation) — replaced by the new batch-push adapter described in Added.
+
+### Security
+
+- **devAdapter**: full event batches are no longer logged in example apps, preventing accidental PII exposure in development consoles.
+- **`mapPostHogEvent`**: full `$current_url` values (which may contain OAuth tokens or reset codes in query params) are no longer used as screen names.
+- **`ingest-server`**: parameterised-style escaping for AWS credentials in DuckDB SQL prevents SQL injection via environment variables.
+- **`ingest-server`**: server-side `received_at` timestamping prevents clients from injecting or back-dating timestamps on the ingest endpoint.
+
 ## [0.7.0] — 2026-04-12
 
 ### Changed
