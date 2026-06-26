@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **`@drakkar.software/sunglasses-adapter-sentry`** and **`@drakkar.software/sunglasses-adapter-posthog`** — removed in favor of built-in error capture (`captureException`, `SunglassesErrorBoundary`, `autoCaptureErrors`) in `@drakkar.software/sunglasses-react` and `@drakkar.software/sunglasses-react-native`.
+
 ## [0.11.0] — 2026-06-26
 
 ### Added

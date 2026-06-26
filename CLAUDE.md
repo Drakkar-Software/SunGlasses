@@ -25,8 +25,6 @@ Package dependency graph (runtime, not devDeps):
 ├── @drakkar.software/sunglasses-storage-localstorage
 ├── @drakkar.software/sunglasses-storage-async-storage
 ├── @drakkar.software/sunglasses-storage-http
-├── @drakkar.software/sunglasses-adapter-posthog
-├── @drakkar.software/sunglasses-adapter-sentry
 └── (your own adapters via IAnalyticsAdapter)
 ```
 

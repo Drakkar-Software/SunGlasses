@@ -642,13 +642,12 @@ export interface ISunglassesTypedClient<T extends EventMap> extends ISunglassesC
 }
 
 // ---------------------------------------------------------------------------
-// Error event properties (shared across error-capturing adapters)
+// Error event properties (shared across error-capturing code)
 // ---------------------------------------------------------------------------
 
 /**
- * Standard properties emitted by error-capturing adapters as `$error` events.
- * Shared by `@drakkar.software/sunglasses-adapter-sentry`,
- * `@drakkar.software/sunglasses-adapter-posthog`, and `SunglassesErrorBoundary`.
+ * Standard properties emitted by error-capturing code as `$error` events.
+ * Used by `captureException`, `SunglassesErrorBoundary`, and `autoCaptureErrors`.
  */
 export interface ErrorEventProperties {
   $error_message: string;

@@ -27,8 +27,6 @@ Track screen views, button taps, and custom events — with built-in PII sanitiz
 | `@drakkar.software/sunglasses-storage-localstorage` | Web | localStorage persistence adapter |
 | `@drakkar.software/sunglasses-storage-async-storage` | React Native | AsyncStorage persistence adapter |
 | `@drakkar.software/sunglasses-storage-http` | Any | Batched HTTP push output adapter |
-| `@drakkar.software/sunglasses-adapter-sentry` | Web / RN | Sentry `beforeSend` bridge — captures errors as `$error` events |
-| `@drakkar.software/sunglasses-adapter-posthog` | Web / RN | PostHog `before_send` bridge — maps autocaptured events to SunGlasses |
 
 ## Quickstart — Web (React + Vite)
 
@@ -441,7 +439,7 @@ class SecureStorageAdapter implements IStorageAdapter {
 
 ## Built-in Error Capture (no adapter required)
 
-The `react` and `react-native` packages ship error capture out of the box — no Sentry adapter needed. Everything emits `$error` events through the consent-gated `capture()` and runs through PiiSanitizer automatically.
+The `react` and `react-native` packages ship error capture out of the box — no third-party bridge needed. Everything emits `$error` events through the consent-gated `capture()` and runs through PiiSanitizer automatically.
 
 ### `captureException` (manual / try-catch)
 
@@ -538,179 +536,6 @@ const unpatch = patchConsole(client, { levels: ['error', 'warn'] });
 Notes:
 - Console capture is **noisy** — React logs render errors, key warnings, and prop-type warnings through `console.error`. Use `ignorePatterns` to filter, and expect overlap with `SunglassesErrorBoundary` (boundary = `$error_handled: true`, console = `$error_handled: false`).
 - The patch always calls the original `console` method first and guards against capture→log→capture recursion (it skips SunGlasses' own `[SunGlasses]`-prefixed logs).
-
----
-
-## Sentry Bridge (`@drakkar.software/sunglasses-adapter-sentry`)
-
-Capture unhandled errors as `$error` analytics events via the Sentry `beforeSend` hook. All errors run through the existing PiiSanitizer middleware automatically. No `@sentry/*` runtime dependency — bring your own Sentry SDK. Prefer the built-in error capture above unless you already use Sentry.
-
-```bash
-pnpm add @drakkar.software/sunglasses-adapter-sentry
-```
-
-### Both Sentry and SunGlasses receive errors
-
-```ts
-import * as Sentry from '@sentry/browser'; // or @sentry/react-native
-import { createSentryBeforeSend } from '@drakkar.software/sunglasses-adapter-sentry';
-
-Sentry.init({
-  dsn: 'https://...',
-  beforeSend: createSentryBeforeSend(client),
-});
-```
-
-### SunGlasses only — no data sent to Sentry servers
-
-```ts
-import * as Sentry from '@sentry/browser';
-import { createSentryBeforeSend } from '@drakkar.software/sunglasses-adapter-sentry';
-
-// No DSN needed. Sentry attaches global error handlers and fires beforeSend,
-// but transmits nothing. suppressSentrySend: true returns null from beforeSend.
-Sentry.init({
-  beforeSend: createSentryBeforeSend(client, { suppressSentrySend: true }),
-});
-```
-
-### React error boundary
-
-Catches render-phase errors before they reach Sentry's global handler:
-
-```tsx
-import { SunglassesErrorBoundary } from '@drakkar.software/sunglasses-adapter-sentry';
-
-<SunglassesErrorBoundary client={client} fallback={<ErrorPage />}>
-  <App />
-</SunglassesErrorBoundary>
-```
-
-### Configuration
-
-```ts
-createSentryBeforeSend(client, {
-  includeStack: false,      // include stack frames in $error_stack — default false (privacy)
-  maxStackFrames: 5,        // max frames when includeStack is true
-  maxMessageLength: 200,    // truncate error messages — error msgs can contain PII
-  ignorePatterns: [/ResizeObserver/],  // skip errors matching these patterns
-  suppressSentrySend: true, // return null from beforeSend — Sentry won't transmit
-  beforeCapture: (props) => ({ ...props, app_version: '1.2.0' }), // transform or drop (null)
-});
-```
-
-Captured events have event name `$error` and these typed properties (`ErrorEventProperties` from core):
-
-| Property | Description |
-|----------|-------------|
-| `$error_message` | `Error.message` (truncated to `maxMessageLength`) |
-| `$error_type` | `Error.name` (e.g. `"TypeError"`) |
-| `$error_handled` | `false` for unhandled; `true` from `SunglassesErrorBoundary` |
-| `$error_level` | Sentry event level (default `"error"`) |
-| `$error_stack` | Stack frames (opt-in via `includeStack: true`) |
-
----
-
-## PostHog Bridge (`@drakkar.software/sunglasses-adapter-posthog`)
-
-Forward PostHog events to SunGlasses via the PostHog `before_send` hook (available since posthog-js v1.187.0; same API on posthog-react-native). No `posthog-js` runtime dependency — bring your own PostHog SDK.
-
-```bash
-pnpm add @drakkar.software/sunglasses-adapter-posthog
-```
-
-### Both PostHog and SunGlasses receive events
-
-```ts
-import { createPostHogBeforeSend } from '@drakkar.software/sunglasses-adapter-posthog';
-
-posthog.init(key, {
-  before_send: createPostHogBeforeSend(client),
-});
-```
-
-### SunGlasses only — PostHog as local capture layer, no data sent to PostHog servers
-
-```ts
-posthog.init(key, {
-  before_send: createPostHogBeforeSend(client, { suppressPostHogSend: true }),
-});
-```
-
-### Replace custom screen + error tracking with PostHog autocapture (local-only shim)
-
-Use posthog-js purely as a capture engine — nothing is sent to PostHog servers.
-`HttpStorageAdapter` (pointing at your own endpoint) is the sole event sink.
-
-```ts
-import { createPostHogBeforeSend } from '@drakkar.software/sunglasses-adapter-posthog';
-
-posthog.init('phc_xxx', {
-  persistence: 'memory',            // PostHog stores nothing locally
-  disable_session_recording: true,
-  capture_pageview: 'history_change', // SPA pageviews (web)
-  capture_exceptions: true,          // global window.onerror + unhandledrejection
-  before_send: createPostHogBeforeSend(client, {
-    suppressPostHogSend: true,        // nothing sent to PostHog Cloud
-    systemEvents: {
-      pageview: true,   // $pageview/$screen → client.screen()
-      exception: true,  // $exception → client.capture('$error', …)
-      // forward: ['$web_vitals', '$pageleave'],  // opt-in other $ events
-    },
-  }),
-});
-
-// SunGlasses client sends everything to your own endpoint:
-const client = await SunglassesCore.create({
-  adapters: [new HttpStorageAdapter({ endpoint: 'https://ingest.example.com/batch' })],
-  ...
-});
-```
-
-With `suppressPostHogSend: true` + `persistence: 'memory'`, PostHog makes no network requests and persists nothing — SunGlasses' consent gate still governs whether bridged events are recorded.
-
-> **Not bridgeable** (require PostHog Cloud): session replay, heatmaps, feature flag evaluation.
-
-> ⚠️ `forward: ['$autocapture']` captures DOM element content — review PiiSanitizer config before enabling in production.
-
-### Keep `SunglassesErrorBoundary` alongside PostHog exception autocapture
-
-PostHog's global handlers do **not** catch React render-phase errors. Wire both:
-
-```tsx
-import { SunglassesErrorBoundary } from '@drakkar.software/sunglasses-adapter-sentry';
-
-// posthog captures unhandled ($error_handled: false)
-// boundary catches render errors ($error_handled: true)
-<SunglassesErrorBoundary client={client} fallback={<ErrorPage />}>
-  <App />
-</SunglassesErrorBoundary>
-```
-
-### Configuration
-
-```ts
-createPostHogBeforeSend(client, {
-  suppressPostHogSend: false,         // return null from before_send — PostHog won't transmit
-  systemEvents: {
-    pageview: false,                  // $pageview/$screen → client.screen()
-    exception: false,                 // $exception → client.capture('$error', …)
-    includeStack: false,              // include $error_stack (opt-in, privacy)
-    maxStackFrames: 5,
-    forward: [],                      // other $-events to forward verbatim
-  },
-  ignoreEventTypes: ['survey_shown'], // explicit block list
-  ignorePatterns: [/^debug_/],        // skip by regex on event name
-  transformEventName: (n) => n.replace(/_/g, ' '), // rename events
-  beforeCapture: (name, props) => ({ ...props, source: 'posthog' }), // transform or drop (null)
-});
-```
-
-> **Note:** PostHog fires `before_send` for `$identify` / `$groupidentify` on web/RN.
-> With `includeSystemEvents: false` (default), these are suppressed.
-> Use `client.identify()` directly for identity data.
-
----
 
 ## Error Handling
 
