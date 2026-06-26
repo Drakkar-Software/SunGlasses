@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { ISunglassesClient, ScreenTrackingOptions } from '@drakkar.software/sunglasses-core';
+import { usePathname as _resolvedUsePathname } from './expoRouterCompat.js';
 
 /**
  * Expo Router screen tracking hook.
@@ -21,25 +22,19 @@ import type { ISunglassesClient, ScreenTrackingOptions } from '@drakkar.software
  * }
  * ```
  */
+
+function _noopPathname(): string { return ''; }
+
+// Resolved once at module load via expoRouterCompat (which already uses a module-level
+// try/catch invisible to React Compiler's hook analysis). Calling _impl() inside the
+// hook always calls the same function across every render — stable hook call count.
+const _impl = _resolvedUsePathname ?? _noopPathname;
+
 export function useExpoRouterScreenTracking(
   client: ISunglassesClient,
   options: Pick<ScreenTrackingOptions, 'screenNameMapper'> = {}
 ): void {
-  // Lazy import to avoid hard dependency on expo-router at import time.
-  // This keeps the package usable in projects that use React Navigation instead.
-  let pathname: string | undefined;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { usePathname } = require('expo-router') as { usePathname: () => string };
-    // We call the hook unconditionally here — the try/catch is around the require,
-    // not the hook call. If expo-router isn't installed this throws at require time,
-    // before any hook rules are violated.
-    pathname = usePathname();
-  } catch {
-    // expo-router not installed; this hook is a no-op
-    return;
-  }
-
+  const pathname = _impl();
   const { screenNameMapper } = options;
   useEffect(() => {
     if (!pathname) return;

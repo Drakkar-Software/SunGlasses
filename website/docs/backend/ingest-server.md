@@ -75,3 +75,7 @@ duckdb
 ```
 
 See [Local testing with MinIO](/backend/local-testing) and [Event shape](/reference/event-shape) for the Parquet schema.
+
+## Visualize with the analytics dashboard
+
+For a built-in UI instead of the DuckDB CLI, run the [analytics dashboard](/backend/analytics-dashboard) alongside the ingest server. It queries the same S3 Parquet prefix via DuckDB and exposes charts (DAU, top events, retention) plus a read-only SQL console.

@@ -105,6 +105,7 @@ const config: Config = {
             { label: "Consent", to: "/privacy/consent" },
             { label: "Error Capture", to: "/guides/error-capture" },
             { label: "Ingest Server", to: "/backend/ingest-server" },
+            { label: "Analytics Dashboard", to: "/backend/analytics-dashboard" },
           ],
         },
         {

@@ -66,6 +66,7 @@ export async function initDb(): Promise<void> {
     const useSSL = ENDPOINT_URL
       ? `, USE_SSL ${ENDPOINT_URL.startsWith('https') ? 'true' : 'false'}`
       : '';
+    const urlStyle = ENDPOINT_URL ? `, URL_STYLE 'path'` : '';
     await _conn.run(`
       CREATE OR REPLACE SECRET sg_s3 (
         TYPE       s3,
@@ -74,6 +75,7 @@ export async function initDb(): Promise<void> {
         REGION     '${sqlEscape(AWS_REGION)}'
         ${endpointClause}
         ${useSSL}
+        ${urlStyle}
       )
     `);
   } else {

@@ -48,6 +48,7 @@ class GlobalErrorBoundaryInner extends React.Component<InnerProps, State> {
   }
 
   componentDidMount(): void {
+    if (typeof subscribeGlobalError !== 'function') return;
     this.unsubscribe = subscribeGlobalError((info) => this.handleGlobalError(info));
   }
 

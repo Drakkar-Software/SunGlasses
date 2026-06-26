@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Analytics dashboard** (`apps/analytics-dashboard`): full-stack read-only analytics app alongside `ingest-server`. Fastify query API runs DuckDB aggregations over S3 Parquet (`read_parquet` with hive partitioning); React + Recharts UI with overview KPIs, event volume time series, DAU chart, top events/screens/errors tables, day-N retention cohorts, and an ad-hoc read-only SQL console. Shares S3 env vars with `ingest-server`; default port `8788`. Runtime S3 setup screen when `S3_BUCKET` is unset or env credentials fail (`GET /api/config/status`, `POST /api/config`); credentials kept in server memory only.
+
 ## [0.12.0] — 2026-06-26
 
 ### Added

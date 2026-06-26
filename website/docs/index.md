@@ -41,6 +41,7 @@ Track screen views, button taps, and custom events — with built-in PII sanitiz
 | Understand consent and privacy | [Consent](/privacy/consent) |
 | Capture errors automatically | [Error capture](/guides/error-capture) |
 | Self-host event ingestion | [Ingest server](/backend/ingest-server) |
+| Visualize analytics from S3 Parquet | [Analytics dashboard](/backend/analytics-dashboard) |
 | Build a custom adapter | [Custom adapter](/adapters/custom-adapter) |
 | Contribute to the SDK | [Dev setup](/contributing/dev-setup) |
 
