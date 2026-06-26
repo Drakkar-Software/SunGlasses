@@ -19,6 +19,8 @@ export interface ConfigStatus {
   baseUrl: string | null;
   app: string | null;
   cacheDir: string | null;
+  /** Starfish list/pull without cap-cert when the collection allows public read. */
+  starfishPublicRead: boolean;
   sync: SyncStats | null;
 }
 
@@ -41,6 +43,7 @@ export function statusForS3(
     baseUrl: null,
     app: null,
     cacheDir: null,
+    starfishPublicRead: false,
     sync: null,
   };
 }
@@ -64,6 +67,7 @@ export function statusForStarfish(
     baseUrl: config?.baseUrl ?? null,
     app: config?.app ?? null,
     cacheDir: config?.cacheDir ?? null,
+    starfishPublicRead: config?.publicRead ?? false,
     sync,
   };
 }

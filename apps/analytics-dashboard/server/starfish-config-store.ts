@@ -20,7 +20,12 @@ export async function loadStoredStarfishConfig(): Promise<StoredStarfishConfig |
     const raw = await readFile(path, 'utf8');
     const parsed = JSON.parse(raw) as StoredStarfishConfig;
     if (!parsed?.config?.baseUrl || !parsed.config.app) return null;
-    return parsed;
+    return {
+      config: {
+        ...parsed.config,
+        publicRead: parsed.config.publicRead ?? false,
+      },
+    };
   } catch {
     return null;
   }

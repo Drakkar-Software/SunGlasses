@@ -43,18 +43,18 @@ On first open, choose **Starfish** or **Direct S3** in the setup screen.
 
 Use when Garage/S3 is internal-only and the public entry point is the sync server.
 
-1. Wire the analytics namespace on Infra sync (`read_roles: ["admin"]`, `listable: true`, `make_platform_admin_enricher`).
+1. Wire the analytics namespace on your sync server (`listable: true`, and either `read_roles: ["admin"]` with a platform admin enricher, or `read_roles: ["public"]` for unauthenticated reads).
 2. In the dashboard UI, select **Starfish** and provide:
    - **Sync base URL** — e.g. `https://sync.example.com/v1/analytics`
    - **App slug** — e.g. `octochat` (matches `StarfishAnalyticsAdapter` `app`)
-   - **Admin cap-cert JSON** + **device Ed25519 private key (hex)** — platform root cap whose `sub` matches `PLATFORM_USERID`
+   - **Admin cap-cert** + **device Ed25519 private key (hex)** — when `read_roles` includes `admin`; or enable **Public read** when the collection allows anonymous list/pull
 3. The server lists batches (`GET /list/events/{app}`), pulls Parquet (`GET /pull/events/{app}/{batchId}`), caches under `.parquet-cache/`, and runs DuckDB locally.
 
 Click **Refresh data** in the header after new events are ingested.
 
 Settings persist to `.starfish-config.local.json` (gitignored).
 
-Optional env auto-connect:
+Optional env auto-connect (admin cap-cert):
 
 ```bash
 STARFISH_CONFIGURE_FROM_ENV=true
@@ -62,6 +62,15 @@ STARFISH_BASE_URL=http://localhost:3000/v1/analytics
 STARFISH_APP=octochat
 STARFISH_CAP_PATH=./admin.cap.json
 STARFISH_DEV_ED_PRIV_HEX=…
+```
+
+Public read (no cap-cert):
+
+```bash
+STARFISH_CONFIGURE_FROM_ENV=true
+STARFISH_PUBLIC_READ=true
+STARFISH_BASE_URL=http://localhost:3000/v1/analytics
+STARFISH_APP=octochat
 ```
 
 ### Direct S3
@@ -91,6 +100,7 @@ pnpm --filter analytics-dashboard start
 | `S3_CONFIGURE_FROM_ENV` | — | Opt-in direct S3 from env |
 | `S3_BUCKET`, `S3_PREFIX`, `AWS_*`, `ENDPOINT_URL` | — | Direct S3 mode |
 | `STARFISH_CONFIGURE_FROM_ENV` | — | Opt-in Starfish from env |
+| `STARFISH_PUBLIC_READ` | — | Unauthenticated list/pull (no cap-cert) |
 | `STARFISH_BASE_URL` | — | Analytics namespace URL |
 | `STARFISH_APP` | — | App slug under `events/{app}/` |
 | `STARFISH_CAP_PATH` / `STARFISH_CAP_JSON` | — | Admin cap-cert |
@@ -114,7 +124,7 @@ pnpm --filter analytics-dashboard start
 | `GET` | `/api/retention` | Day-N retention |
 | `POST` | `/api/query` | Ad-hoc read-only SQL |
 
-### `POST /api/config` — Starfish
+### `POST /api/config` — Starfish (admin cap-cert)
 
 ```json
 {
@@ -123,6 +133,17 @@ pnpm --filter analytics-dashboard start
   "app": "octochat",
   "cap": "{ … CapCert JSON … }",
   "devEdPrivHex": "…"
+}
+```
+
+### `POST /api/config` — Starfish (public read)
+
+```json
+{
+  "source": "starfish",
+  "baseUrl": "https://sync.example.com/v1/analytics",
+  "app": "octochat",
+  "publicRead": true
 }
 ```
 

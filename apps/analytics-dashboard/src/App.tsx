@@ -67,17 +67,20 @@ export function App() {
         let status = await fetchConfigStatus();
         if (!cancelled && !status.ready && canAutoConnectFromBrowser()) {
           const saved = loadBrowserConfig();
-          if (saved?.mode === 'starfish' && saved.baseUrl && saved.app && saved.capJson && saved.devEdPrivHex) {
-            try {
-              status = await saveConfig({
-                source: 'starfish',
-                baseUrl: saved.baseUrl,
-                app: saved.app,
-                cap: saved.capJson,
-                devEdPrivHex: saved.devEdPrivHex,
-              });
-            } catch {
-              // Show setup form with saved fields
+          if (saved?.mode === 'starfish' && saved.baseUrl && saved.app) {
+            if (saved.publicRead || (saved.capJson && saved.devEdPrivHex)) {
+              try {
+                status = await saveConfig({
+                  source: 'starfish',
+                  baseUrl: saved.baseUrl,
+                  app: saved.app,
+                  publicRead: saved.publicRead,
+                  cap: saved.capJson,
+                  devEdPrivHex: saved.devEdPrivHex,
+                });
+              } catch {
+                // Show setup form with saved fields
+              }
             }
           } else if (saved?.s3Bucket) {
             try {
@@ -111,6 +114,7 @@ export function App() {
             baseUrl: null,
             app: null,
             cacheDir: null,
+            starfishPublicRead: false,
             sync: null,
             error: e instanceof Error ? e.message : 'Could not reach the API server',
           });

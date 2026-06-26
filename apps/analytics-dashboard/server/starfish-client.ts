@@ -27,27 +27,38 @@ function makeCapProvider(cap: CapCert, devEdPrivHex: string): StarfishCapProvide
   };
 }
 
-export function createStarfishClient(config: StarfishConfig): StarfishClient {
+function createStarfishClient(config: StarfishConfig): StarfishClient {
+  if (config.publicRead) {
+    return new StarfishClient({ baseUrl: config.baseUrl });
+  }
   return new StarfishClient({
     baseUrl: config.baseUrl,
-    capProvider: makeCapProvider(config.cap, config.devEdPrivHex),
+    capProvider: makeCapProvider(config.cap!, config.devEdPrivHex!),
   });
 }
 
-async function signedGet(
+async function starfishGet(
   config: StarfishConfig,
   pathAndQuery: string,
+  accept: string,
 ): Promise<Response> {
+  if (config.publicRead) {
+    return fetch(`${config.baseUrl}${pathAndQuery}`, {
+      method: 'GET',
+      headers: { [HEADER_ACCEPT]: accept },
+    });
+  }
+
   const url = new URL(config.baseUrl);
   const { sig, ts, nonce } = await signRequest(
     { method: 'GET', pathAndQuery, host: url.host },
-    config.devEdPrivHex,
+    config.devEdPrivHex!,
   );
   return fetch(`${config.baseUrl}${pathAndQuery}`, {
     method: 'GET',
     headers: {
-      [HEADER_ACCEPT]: 'application/json',
-      [HEADER_AUTHORIZATION]: `Cap ${encodeCapAuth(config.cap)}`,
+      [HEADER_ACCEPT]: accept,
+      [HEADER_AUTHORIZATION]: `Cap ${encodeCapAuth(config.cap!)}`,
       [HEADER_SIG]: sig,
       [HEADER_TS]: String(ts),
       [HEADER_NONCE]: nonce,
@@ -66,7 +77,7 @@ export async function listBatches(
     path += `&after=${encodeURIComponent(opts.after)}`;
   }
 
-  const res = await signedGet(config, path);
+  const res = await starfishGet(config, path, 'application/json');
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Starfish list failed (${res.status}): ${text}`);
@@ -87,7 +98,7 @@ export async function pullBatch(
   return { data: result.data, etag: result.hash };
 }
 
-/** Verify admin cap can list (and pull one file when data exists). */
+/** Verify list/pull access (and pull one file when data exists). */
 export async function testStarfishConnection(config: StarfishConfig): Promise<void> {
   const page = await listBatches(config, { limit: 1 });
   if (page.items.length > 0) {

@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-06-26
+
+### Fixed
+
+- **`useExpoRouterScreenTracking` production crash** (`@drakkar.software/sunglasses-react-native`): the hook was calling `require('expo-router')` inside the hook body, which Metro cannot resolve in production bundles ("Requiring unknown module 'expo-router'"). Moved resolution to module load time via the existing `expoRouterCompat` shim; a stable no-op fallback ensures the hook call count is constant regardless of whether expo-router is installed.
+- **`SunglassesGlobalErrorBoundary` crash when core < 0.12.0** (`@drakkar.software/sunglasses-react`, `@drakkar.software/sunglasses-react-native`): `componentDidMount` now guards `subscribeGlobalError` with a `typeof` check so the boundary degrades gracefully (render-phase errors still caught) when an older peer `sunglasses-core` is installed.
+
 ### Added
 
 - **Analytics dashboard** (`apps/analytics-dashboard`): full-stack read-only analytics app alongside `ingest-server`. Fastify query API runs DuckDB aggregations over S3 Parquet (`read_parquet` with hive partitioning); React + Recharts UI with overview KPIs, event volume time series, DAU chart, top events/screens/errors tables, day-N retention cohorts, and an ad-hoc read-only SQL console. Shares S3 env vars with `ingest-server`; default port `8788`. Runtime S3 setup screen when `S3_BUCKET` is unset or env credentials fail (`GET /api/config/status`, `POST /api/config`); credentials kept in server memory only. S3 can be configured entirely from the UI (no `.env` required); settings persist to `.s3-config.local.json`. Env-based S3 is opt-in via `S3_CONFIGURE_FROM_ENV=true`.
 - **Analytics dashboard — Starfish local-sync** (`apps/analytics-dashboard`): alternative data source when S3/Garage is not publicly reachable. Authenticates to `/v1/analytics` with an admin cap-cert, lists and pulls Parquet batches via Starfish `list` + `pull`, caches locally under `.parquet-cache/`, and runs existing DuckDB queries against the cache. UI setup tab for Starfish vs direct S3; `POST /api/sync` for incremental refresh; config in `.starfish-config.local.json`. Requires Infra analytics namespace with `listable: true`, platform admin enricher, and `starfish-events` pull support via `interceptPull` plugin hook (Starfish ≥ 3.0.0-alpha.44).
+- **Analytics dashboard — Starfish public read** (`apps/analytics-dashboard`): optional unauthenticated list/pull when the events collection allows public read (`publicRead` in UI or `STARFISH_PUBLIC_READ=true`); skips admin cap-cert and device signing key.
 
 ## [0.12.0] — 2026-06-26
 

@@ -33,8 +33,8 @@ analytics-dashboard  ──read_parquet──▶  DuckDB  ──▶  Fastify /ap
 
 - A running Starfish sync server exposing `/v1/analytics`
 - `starfish-events` ≥ 3.0.0-alpha.44 on that server (Parquet pull via `interceptPull` plugin hook)
-- Analytics collection with `listable: true`, `read_roles: ["admin"]`, and a platform admin enricher
-- Platform admin cap-cert whose identity is granted `admin` on list/pull
+- Analytics collection with `listable: true`
+- Either **admin cap-cert** auth (`read_roles` includes `admin`) or **public read** (`read_roles` includes `public` — no cap-cert needed)
 
 ## Quick start
 
@@ -63,7 +63,9 @@ Use when the object store is not publicly reachable and the sync server is the e
 
 1. Clients push JSON event batches to `POST /v1/analytics/push/events/{app}/{batchId}` via `@drakkar.software/sunglasses-adapter-starfish`.
 2. The `starfish-events` plugin on the sync server encodes each batch as Parquet and writes it to object storage at `events/{app}/{batchId}.parquet`.
-3. The dashboard authenticates with a platform admin cap-cert, lists batches (`GET /list/events/{app}`), pulls Parquet (`GET /pull/events/{app}/{batchId}`), caches files under `.parquet-cache/`, and runs DuckDB queries against the cache.
+3. The dashboard lists batches (`GET /list/events/{app}`), pulls Parquet (`GET /pull/events/{app}/{batchId}`), caches files under `.parquet-cache/`, and runs DuckDB queries against the cache.
+
+Use **admin cap-cert** auth when `read_roles` includes `admin`, or enable **Public read** in the setup UI (or `STARFISH_PUBLIC_READ=true`) when the collection allows anonymous list/pull (`read_roles` includes `public`).
 
 Click **Refresh data** in the header (or `POST /api/sync`) after new events are ingested.
 
@@ -85,7 +87,7 @@ Set `S3_CONFIGURE_FROM_ENV=true` and the same `S3_*` / `AWS_*` vars as ingest-se
 
 Set `STARFISH_CONFIGURE_FROM_ENV=true` or `S3_CONFIGURE_FROM_ENV=true` in `.env` to connect on startup without the setup screen. See `.env.example` for all variables.
 
-**Starfish example:**
+**Starfish with admin cap-cert:**
 
 ```bash
 PORT=8788
@@ -98,11 +100,22 @@ STARFISH_DEV_ED_PRIV_HEX=<platform root Ed25519 private key, hex>
 STARFISH_CACHE_DIR=.parquet-cache/octochat
 ```
 
-- `STARFISH_BASE_URL` — analytics namespace URL (scheme + host + `/v1/analytics`)
-- `STARFISH_CAP_PATH` or `STARFISH_CAP_JSON` — platform admin cap-cert JSON
-- `STARFISH_DEV_ED_PRIV_HEX` — Ed25519 private key (hex) that signs list/pull requests
+**Starfish with public read (no cap-cert):**
 
-The cap identity must be recognized as `admin` by the sync server's role enricher (typically the platform root `userId`).
+```bash
+STARFISH_CONFIGURE_FROM_ENV=true
+STARFISH_PUBLIC_READ=true
+STARFISH_BASE_URL=http://localhost:3000/v1/analytics
+STARFISH_APP=octochat
+STARFISH_CACHE_DIR=.parquet-cache/octochat
+```
+
+- `STARFISH_BASE_URL` — analytics namespace URL (scheme + host + `/v1/analytics`)
+- `STARFISH_PUBLIC_READ` — when `true`, skip cap-cert and signing key (collection must allow public read)
+- `STARFISH_CAP_PATH` or `STARFISH_CAP_JSON` — platform admin cap-cert JSON (admin auth only)
+- `STARFISH_DEV_ED_PRIV_HEX` — Ed25519 private key (hex) for signing cap requests (admin auth only)
+
+The cap identity must be recognized as `admin` by the sync server's role enricher when public read is off.
 
 **Direct S3 example:**
 
@@ -130,6 +143,7 @@ ENDPOINT_URL=http://localhost:9000
 | `ENDPOINT_URL` | — | Custom S3 endpoint (MinIO, Garage, etc.) |
 | `DASHBOARD_S3_CONFIG_PATH` | `.s3-config.local.json` | Override path for UI-saved S3 config |
 | `STARFISH_CONFIGURE_FROM_ENV` | — | Opt-in Starfish from env on startup |
+| `STARFISH_PUBLIC_READ` | — | Unauthenticated list/pull (no cap-cert) |
 | `STARFISH_BASE_URL` | — | Analytics namespace URL |
 | `STARFISH_APP` | — | App slug under `events/{app}/` |
 | `STARFISH_CAP_PATH` | — | Path to admin cap-cert JSON file |
@@ -144,7 +158,7 @@ Env-based config is opt-in. Without `*_CONFIGURE_FROM_ENV=true`, the setup scree
 
 Settings entered in the setup screen are equivalent to the env vars above.
 
-**Starfish** (`POST /api/config`):
+**Starfish — admin cap-cert** (`POST /api/config`):
 
 ```json
 {
@@ -153,6 +167,17 @@ Settings entered in the setup screen are equivalent to the env vars above.
   "app": "octochat",
   "cap": "{ … CapCert JSON … }",
   "devEdPrivHex": "…"
+}
+```
+
+**Starfish — public read** (`POST /api/config`):
+
+```json
+{
+  "source": "starfish",
+  "baseUrl": "http://localhost:3000/v1/analytics",
+  "app": "octochat",
+  "publicRead": true
 }
 ```
 

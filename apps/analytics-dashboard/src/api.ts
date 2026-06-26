@@ -27,6 +27,7 @@ export interface StarfishConfigInput {
   source?: 'starfish';
   baseUrl?: string;
   app?: string;
+  publicRead?: boolean;
   cap?: string;
   devEdPrivHex?: string;
   cacheDir?: string;
@@ -48,6 +49,7 @@ export interface BrowserConfig {
   useIam?: boolean;
   baseUrl?: string;
   app?: string;
+  publicRead?: boolean;
   capJson?: string;
   devEdPrivHex?: string;
 }
@@ -75,6 +77,7 @@ export function canAutoConnectFromBrowser(): boolean {
   const c = loadBrowserConfig();
   if (!c?.remember) return false;
   if (c.mode === 'starfish') {
+    if (c.publicRead) return Boolean(c.baseUrl && c.app);
     return Boolean(c.baseUrl && c.app && c.capJson && c.devEdPrivHex);
   }
   if (!c.s3Bucket) return false;
@@ -94,6 +97,7 @@ export interface ConfigStatus {
   baseUrl: string | null;
   app: string | null;
   cacheDir: string | null;
+  starfishPublicRead: boolean;
   sync: SyncStats | null;
   error: string | null;
 }
@@ -244,6 +248,7 @@ function parseConfigStatus(body: Record<string, unknown>): ConfigStatus {
     baseUrl: (body.baseUrl as string | null) ?? null,
     app: (body.app as string | null) ?? null,
     cacheDir: (body.cacheDir as string | null) ?? null,
+    starfishPublicRead: Boolean(body.starfishPublicRead),
     sync: (body.sync as SyncStats | null) ?? null,
     error: (body.error as string | null) ?? null,
   };

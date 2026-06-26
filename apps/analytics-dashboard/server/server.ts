@@ -120,10 +120,13 @@ async function applyStarfishConfig(config: StarfishConfig): Promise<void> {
   _starfishConfig = config;
 }
 
-function formatStarfishError(raw: string): string {
+function formatStarfishError(raw: string, publicRead?: boolean): string {
   const firstLine = raw.split('\n').map((l) => l.trim()).find(Boolean) ?? raw;
   if (/401|403|unauthorized|forbidden/i.test(firstLine)) {
-    return 'Starfish access denied — check admin cap-cert, device private key, and PLATFORM_USERID wiring on the sync server.';
+    if (publicRead) {
+      return 'Starfish access denied — the events collection may not allow public read/list. Enable admin cap-cert auth or set read_roles to include "public" on the sync server.';
+    }
+    return 'Starfish access denied — check admin cap-cert, device private key, and platform admin wiring on the sync server.';
   }
   if (/ECONNREFUSED|fetch failed|ENOTFOUND/i.test(firstLine)) {
     return `Cannot reach Starfish at the configured URL. Is the sync server running?`;
@@ -153,7 +156,7 @@ app.get('/api/config/status', async (_req, reply) => {
 
 app.post<{ Body: ConfigInput }>('/api/config', async (req, reply) => {
   const body = req.body ?? {};
-  const source = body.source ?? ('baseUrl' in body || 'cap' in body ? 'starfish' : 'direct_s3');
+  const source = body.source ?? ('baseUrl' in body || 'cap' in body || 'publicRead' in body ? 'starfish' : 'direct_s3');
 
   if (source === 'starfish') {
     const parsed = parseStarfishInput(body as StarfishConfigInput);
@@ -170,7 +173,10 @@ app.post<{ Body: ConfigInput }>('/api/config', async (req, reply) => {
       console.log(`[dashboard] Starfish configured → ${getS3Source()}`);
       return reply.send({ ok: true, ...configStatusPayload() });
     } catch (e) {
-      const message = formatStarfishError(e instanceof Error ? e.message : 'Starfish connection failed');
+      const message = formatStarfishError(
+        e instanceof Error ? e.message : 'Starfish connection failed',
+        parsed.publicRead,
+      );
       markInitFailed(message);
       console.error('[dashboard] Starfish config failed:', message);
       return reply.code(400).send({ ok: false, ...configStatusPayload(), error: message });
@@ -221,7 +227,10 @@ app.post('/api/sync', async (_req, reply) => {
     await configureStarfish(_starfishConfig.cacheDir);
     return reply.send({ ok: true, ...configStatusPayload() });
   } catch (e) {
-    const message = formatStarfishError(e instanceof Error ? e.message : 'Sync failed');
+    const message = formatStarfishError(
+      e instanceof Error ? e.message : 'Sync failed',
+      _starfishConfig.publicRead,
+    );
     return reply.code(400).send({ ok: false, ...configStatusPayload(), error: message });
   }
 });
@@ -398,6 +407,7 @@ async function tryStoredStarfish(): Promise<boolean> {
   } catch (e) {
     const message = formatStarfishError(
       e instanceof Error ? e.message : 'Starfish connection failed',
+      stored.config.publicRead,
     );
     markInitFailed(message);
     console.warn(`[dashboard] Saved Starfish config failed — ${message}`);
@@ -432,6 +442,7 @@ async function tryEnvStarfish(): Promise<void> {
   } catch (e) {
     const message = formatStarfishError(
       e instanceof Error ? e.message : 'Starfish connection failed',
+      env.publicRead,
     );
     markInitFailed(message);
     console.warn(`[dashboard] Starfish not ready from .env — ${message}`);

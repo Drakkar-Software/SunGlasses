@@ -35,6 +35,9 @@ export function DataSourcePanel({ status, onConnected }: Props) {
   // Starfish fields
   const [baseUrl, setBaseUrl] = useState(status?.baseUrl ?? browser?.baseUrl ?? '');
   const [app, setApp] = useState(status?.app ?? browser?.app ?? '');
+  const [publicRead, setPublicRead] = useState(
+    status?.starfishPublicRead ?? browser?.publicRead === true,
+  );
   const [capJson, setCapJson] = useState(browser?.capJson ?? '');
   const [devEdPrivHex, setDevEdPrivHex] = useState(browser?.devEdPrivHex ?? '');
 
@@ -53,15 +56,19 @@ export function DataSourcePanel({ status, onConnected }: Props) {
         source: 'starfish',
         baseUrl,
         app,
-        cap: capJson,
-        devEdPrivHex,
+        publicRead,
       };
+      if (!publicRead) {
+        input.cap = capJson;
+        input.devEdPrivHex = devEdPrivHex;
+      }
       saveBrowserConfig({
         mode: 'starfish',
         baseUrl,
         app,
-        capJson: remember ? capJson : undefined,
-        devEdPrivHex: remember ? devEdPrivHex : undefined,
+        publicRead,
+        capJson: remember && !publicRead ? capJson : undefined,
+        devEdPrivHex: remember && !publicRead ? devEdPrivHex : undefined,
         remember,
       });
     } else {
@@ -163,28 +170,41 @@ export function DataSourcePanel({ status, onConnected }: Props) {
               </fieldset>
 
               <fieldset className="form-section">
-                <legend>Admin cap-cert</legend>
-                <label className="form-field">
-                  <span>Cap certificate JSON *</span>
-                  <textarea
-                    required
-                    rows={6}
-                    value={capJson}
-                    onChange={(e) => setCapJson(e.target.value)}
-                    placeholder='{"v":1,"kind":"device",...}'
-                    spellCheck={false}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Device Ed25519 private key (hex) *</span>
+                <legend>Authentication</legend>
+                <label className="form-checkbox">
                   <input
-                    type="password"
-                    required
-                    value={devEdPrivHex}
-                    onChange={(e) => setDevEdPrivHex(e.target.value)}
-                    autoComplete="new-password"
+                    type="checkbox"
+                    checked={publicRead}
+                    onChange={(e) => setPublicRead(e.target.checked)}
                   />
+                  <span>Public read — no cap-cert (collection must allow anonymous list/pull)</span>
                 </label>
+
+                {!publicRead ? (
+                  <>
+                    <label className="form-field">
+                      <span>Cap certificate JSON *</span>
+                      <textarea
+                        required
+                        rows={6}
+                        value={capJson}
+                        onChange={(e) => setCapJson(e.target.value)}
+                        placeholder='{"v":1,"kind":"device",...}'
+                        spellCheck={false}
+                      />
+                    </label>
+                    <label className="form-field">
+                      <span>Device Ed25519 private key (hex) *</span>
+                      <input
+                        type="password"
+                        required
+                        value={devEdPrivHex}
+                        onChange={(e) => setDevEdPrivHex(e.target.value)}
+                        autoComplete="new-password"
+                      />
+                    </label>
+                  </>
+                ) : null}
               </fieldset>
             </>
           ) : (
