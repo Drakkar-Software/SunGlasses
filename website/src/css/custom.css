@@ -1,0 +1,26 @@
+/**
+ * SunGlasses docs theme — amber/slate palette (distinct from Starfish green).
+ */
+
+:root {
+  --ifm-color-primary: #d97706;
+  --ifm-color-primary-dark: #c46d05;
+  --ifm-color-primary-darker: #b96605;
+  --ifm-color-primary-darkest: #995404;
+  --ifm-color-primary-light: #e08a1f;
+  --ifm-color-primary-lighter: #e3912b;
+  --ifm-color-primary-lightest: #e9a54f;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #fbbf24;
+  --ifm-color-primary-dark: #f5b312;
+  --ifm-color-primary-darker: #f3ad0a;
+  --ifm-color-primary-darkest: #c88f08;
+  --ifm-color-primary-light: #fcc736;
+  --ifm-color-primary-lighter: #fccb42;
+  --ifm-color-primary-lightest: #fdd56a;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
