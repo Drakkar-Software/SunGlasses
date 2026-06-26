@@ -54,6 +54,9 @@ export default function RootLayout(): React.ReactElement | null {
       platform: 'react-native',
       appName: 'example-rn',
       appVersion: '0.1.0',
+      appVariant: 'demo',
+      environment: __DEV__ ? 'development' : 'production',
+      features: ['analytics-demo'],
       debug: __DEV__,
       enableSessionTracking: true,
     })

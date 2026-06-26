@@ -45,6 +45,9 @@ async function bootstrap(): Promise<void> {
     platform: 'web',
     appName: 'example-web',
     appVersion: '0.1.0',
+    appVariant: 'demo',
+    environment: 'development',
+    features: ['analytics-demo'],
     debug: true,
     enableSessionTracking: true,
   });

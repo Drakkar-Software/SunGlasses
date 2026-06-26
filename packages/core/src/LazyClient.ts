@@ -1,4 +1,6 @@
 import type {
+  AppMetadata,
+  AppUpdateInfo,
   EventMap,
   ISunglassesClient,
   ISunglassesTypedClient,
@@ -97,6 +99,26 @@ export function createLazyClient<T extends EventMap>(): ISunglassesTypedClient<T
     },
     getRegisteredProperties() {
       return _inner?.getRegisteredProperties() ?? {};
+    },
+
+    // ── App metadata ──────────────────────────────────────────────────────────
+    setEnvironment(environment: string) {
+      _inner?.setEnvironment(environment);
+    },
+    setAppUpdate(update: AppUpdateInfo) {
+      _inner?.setAppUpdate(update);
+    },
+    setFeatures(features: string[]) {
+      _inner?.setFeatures(features);
+    },
+    setEntitlements(entitlements: string[]) {
+      _inner?.setEntitlements(entitlements);
+    },
+    setAppMetadata(meta: Partial<AppMetadata>) {
+      _inner?.setAppMetadata(meta);
+    },
+    getAppMetadata(): AppMetadata {
+      return _inner?.getAppMetadata() ?? {};
     },
 
     // ── Consent ───────────────────────────────────────────────────────────────

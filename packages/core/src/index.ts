@@ -38,6 +38,8 @@ export type {
   SunglassesEvent,
   EventType,
   EventContext,
+  AppUpdateInfo,
+  AppMetadata,
   IdentityState,
   ConsentStatus,
   ConsentState,

@@ -172,6 +172,14 @@ A UUID v4 is generated on first run and persisted locally. It is:
 | `maxQueueSize` | `number` | `500` | Max events in queue |
 | `maxBatchSize` | `number` | `50` | Events per adapter call |
 | `platform` | `'web' \| 'react-native'` | `'web'` | Platform label |
+| `appName` | `string` | — | App name → `context.app.name` |
+| `appVersion` | `string` | — | App version → `context.app.version` |
+| `appBuild` | `string` | — | Build number → `context.app.build` |
+| `appVariant` | `string` | — | App variant / flavor → `context.app.variant` |
+| `appUpdate` | `AppUpdateInfo` | — | OTA / app update info → `context.app.update` |
+| `environment` | `string` | — | Deployment environment → `context.environment` |
+| `features` | `string[]` | — | Enabled features / variants → `context.features` |
+| `entitlements` | `string[]` | — | Active user entitlements → `context.entitlements` |
 | `debug` | `boolean` | `false` | Verbose console logging |
 | `disabled` | `boolean` | `false` | Hard-disable all tracking |
 | `middleware` | `IMiddleware[]` | `[]` | Custom middleware chain |
@@ -193,9 +201,17 @@ client.alias(newId, existingId)                   // Merge two identities
 client.group(groupId, traits?)                    // Associate with an org/workspace
 
 // Super properties (auto-merged into every event)
-client.register({ environment: 'prod' })          // Register persistent properties
-client.unregister('environment')                  // Remove specific key(s)
+client.register({ experiment_group: 'A' })        // Register persistent properties
+client.unregister('experiment_group')             // Remove specific key(s)
 client.getRegisteredProperties()                  // Snapshot of registered props
+
+// Global app metadata (typed, attached to every event's context)
+client.setEnvironment('production')               // → context.environment
+client.setAppUpdate({ id, channel, embedded })    // → context.app.update
+client.setFeatures(['new-onboarding'])            // → context.features (app-scoped)
+client.setEntitlements(['premium'])               // → context.entitlements (user-scoped)
+client.setAppMetadata({ environment, features })  // Merge multiple at once
+client.getAppMetadata()                           // Snapshot of current metadata
 
 // Consent
 client.optIn()                                    // Grant consent
@@ -655,6 +671,47 @@ client.capture('button_clicked', { buttonId: 'cta' });
 ```
 
 Sensitive keys (`email`, `password`, `phone`, etc.) are stripped before traits are persisted. Traits survive app restarts. Call `client.reset()` to clear them.
+
+## Global App Metadata
+
+Attach typed, non-PII metadata about the running app to **every event's `context`** — app name/version/variant, OTA update info, deployment environment, enabled features, and user entitlements. Provide it at init and/or update it at runtime as things change (after a purchase, a flag toggle, or an OTA update is applied).
+
+```ts
+const client = await SunglassesCore.create({
+  adapters: [/* ... */],
+  storage,
+  appName: 'my-app',
+  appVersion: '1.4.2',
+  appVariant: 'pro',
+  appUpdate: { id: 'upd_abc', channel: 'production', runtimeVersion: '1.4.0', embedded: false },
+  environment: 'production',
+  features: ['new-onboarding', 'dark-mode'],
+  entitlements: ['premium'],
+});
+
+// Update later at runtime — reflected on all subsequent events
+client.setEntitlements(['premium', 'team-seat']); // e.g. after an in-app purchase
+client.setFeatures(['new-onboarding']);            // e.g. after a remote-config sync
+client.setAppUpdate({ id: 'upd_def', embedded: false }); // e.g. after an OTA update
+```
+
+Every event then carries:
+
+```jsonc
+"context": {
+  "app": { "name": "my-app", "version": "1.4.2", "variant": "pro", "update": { "id": "upd_abc", "channel": "production", "embedded": false } },
+  "environment": "production",
+  "features": ["new-onboarding", "dark-mode"],
+  "entitlements": ["premium"]
+}
+```
+
+Scoping and lifecycle:
+
+- **App-scoped** (`environment`, `appVariant`, `appUpdate`, `features`) survive `reset()` — they describe the device/build, not the user.
+- **User-scoped** (`entitlements`) is cleared by `reset()` and `deleteUserData()`, like a logout.
+- All metadata is **in-memory only** — re-supply it on each app boot (the same model as `register()` super properties).
+- This lives in the typed `context` envelope, separate from per-event `properties`. Use `register()` for free-form per-event super properties instead.
 
 ## Type-Safe Event Catalog
 

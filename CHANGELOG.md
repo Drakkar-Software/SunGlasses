@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-06-26
+
+### Added
+
+- **Global app metadata** (`@drakkar.software/sunglasses-core`): attach typed, non-PII metadata to every event's `context` — `environment`, `app.variant`, `app.update` (OTA / app update info via the new `AppUpdateInfo` type), `features`, and `entitlements`. Settable at init via new `SunglassesConfig` options (`appVariant`, `appUpdate`, `environment`, `features`, `entitlements`) and updatable at runtime via `setEnvironment()`, `setAppUpdate()`, `setFeatures()`, `setEntitlements()`, `setAppMetadata()`, with `getAppMetadata()` to read the snapshot. App-scoped fields (`environment`, `appVariant`, `appUpdate`, `features`) survive `reset()`; user-scoped `entitlements` are cleared by `reset()` and `deleteUserData()`. New exported types `AppUpdateInfo` and `AppMetadata`.
+
 ## [0.8.0] — 2026-06-25
 
 ### Added

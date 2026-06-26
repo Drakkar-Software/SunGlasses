@@ -8,6 +8,8 @@ import { PiiSanitizer } from './PiiSanitizer.js';
 import { SessionManager } from './SessionManager.js';
 import { TraitManager } from './TraitManager.js';
 import type {
+  AppMetadata,
+  AppUpdateInfo,
   CaptureOptions,
   CleanupConfig,
   ConsentHistoryEntry,
@@ -78,6 +80,12 @@ export class SunglassesCore implements ISunglassesClient {
   private readonly superProperties = new Map<string, unknown>();
   /** In-memory group ID attached to every event's context after group() is called. */
   private groupId: string | null = null;
+  /** In-memory global app metadata attached to every event's context. */
+  private environment: string | undefined;
+  private appVariant: string | undefined;
+  private appUpdate: AppUpdateInfo | undefined;
+  private features: string[] | undefined;
+  private entitlements: string[] | undefined;
 
   private constructor(
     config: SunglassesConfig,
@@ -114,6 +122,12 @@ export class SunglassesCore implements ISunglassesClient {
     this.sessionManager = sessionManager;
     this.traitManager = traitManager;
     this.localArchive = localArchive;
+
+    this.environment = config.environment;
+    this.appVariant = config.appVariant;
+    this.appUpdate = config.appUpdate;
+    this.features = config.features;
+    this.entitlements = config.entitlements;
   }
 
   /**
@@ -302,11 +316,50 @@ export class SunglassesCore implements ISunglassesClient {
     return Object.fromEntries(this.superProperties);
   }
 
+  // ── App metadata ───────────────────────────────────────────────────────────
+
+  setEnvironment(environment: string): void {
+    this.environment = environment;
+  }
+
+  setAppUpdate(update: AppUpdateInfo): void {
+    this.appUpdate = update;
+  }
+
+  setFeatures(features: string[]): void {
+    this.features = features;
+  }
+
+  setEntitlements(entitlements: string[]): void {
+    this.entitlements = entitlements;
+  }
+
+  setAppMetadata(meta: Partial<AppMetadata>): void {
+    if ('environment' in meta) this.environment = meta.environment;
+    if ('appVariant' in meta) this.appVariant = meta.appVariant;
+    if ('appUpdate' in meta) this.appUpdate = meta.appUpdate;
+    if ('features' in meta) this.features = meta.features;
+    if ('entitlements' in meta) this.entitlements = meta.entitlements;
+  }
+
+  getAppMetadata(): AppMetadata {
+    return {
+      environment: this.environment,
+      appVariant: this.appVariant,
+      appUpdate: this.appUpdate,
+      features: this.features,
+      entitlements: this.entitlements,
+    };
+  }
+
   async reset(): Promise<void> {
     await this.identity.reset();
     await this.queue.clear();
     await this.traitManager.clearTraits();
     this.groupId = null;
+    // Entitlements are user-scoped — clear them on logout/reset. App-scoped
+    // metadata (environment, appVariant, appUpdate, features) is preserved.
+    this.entitlements = undefined;
     if (this.sessionManager) {
       await this.sessionManager.end();
     }
@@ -460,6 +513,8 @@ export class SunglassesCore implements ISunglassesClient {
     // Clear in-memory state
     this.groupId = null;
     this.superProperties.clear();
+    // Entitlements are user-scoped — erase them. App-scoped metadata is preserved.
+    this.entitlements = undefined;
 
     // Optionally reset consent (kept separate because the audit trail has
     // regulatory significance — callers must explicitly opt into erasing it)
@@ -584,12 +639,31 @@ export class SunglassesCore implements ISunglassesClient {
       platform: this.config.platform,
     };
 
-    if (this.config.appName || this.config.appVersion) {
+    if (
+      this.config.appName ||
+      this.config.appVersion ||
+      this.appVariant ||
+      this.appUpdate
+    ) {
       ctx.app = {
         name: this.config.appName || undefined,
         version: this.config.appVersion || undefined,
         build: this.config.appBuild || undefined,
+        variant: this.appVariant || undefined,
+        update: this.appUpdate || undefined,
       };
+    }
+
+    if (this.environment) {
+      ctx.environment = this.environment;
+    }
+
+    if (this.features && this.features.length > 0) {
+      ctx.features = this.features;
+    }
+
+    if (this.entitlements && this.entitlements.length > 0) {
+      ctx.entitlements = this.entitlements;
     }
 
     if (sessionId !== undefined) {

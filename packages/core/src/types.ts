@@ -86,13 +86,54 @@ export interface IMiddleware {
 
 export type EventType = 'capture' | 'screen' | 'identify' | 'alias' | 'group';
 
+/**
+ * Over-the-air (OTA) / app update information, e.g. an Expo EAS Update or a web
+ * deploy identifier. Useful for correlating events with a specific shipped bundle.
+ */
+export interface AppUpdateInfo {
+  /** Unique identifier of the applied update (e.g. EAS update ID). */
+  id?: string;
+  /** Release channel the update was published to (e.g. 'production'). */
+  channel?: string;
+  /** Runtime/native version the update is compatible with. */
+  runtimeVersion?: string;
+  /** True when running the bundle shipped in the binary (no OTA applied). */
+  embedded?: boolean;
+  /** ISO-8601 timestamp of when the update was created/published. */
+  createdAt?: string;
+}
+
+/**
+ * Mutable global metadata attached to every event's `context`. Set via
+ * `SunglassesConfig` at init and updatable at runtime. In-memory only — the host
+ * app must re-supply these values on each boot.
+ */
+export interface AppMetadata {
+  /** Deployment environment, e.g. 'production' | 'staging' | 'development'. */
+  environment?: string;
+  /** App variant / build flavor, e.g. 'pro' | 'lite' | 'beta'. */
+  appVariant?: string;
+  /** OTA / app update info for the currently running bundle. */
+  appUpdate?: AppUpdateInfo;
+  /** Enabled features / experiment variants (app-scoped). */
+  features?: string[];
+  /** Active user entitlements (user-scoped, cleared on reset()). */
+  entitlements?: string[];
+}
+
 export interface EventContext {
   library: { name: string; version: string };
   platform: 'web' | 'react-native';
-  app?: { name?: string; version?: string; build?: string };
+  app?: { name?: string; version?: string; build?: string; variant?: string; update?: AppUpdateInfo };
   device?: { type?: string; os?: string };
   screen?: { width?: number; height?: number };
   locale?: string;
+  /** Deployment environment, e.g. 'production' | 'staging' | 'development'. */
+  environment?: string;
+  /** Enabled features / experiment variants (app-scoped). */
+  features?: string[];
+  /** Active user entitlements (user-scoped). */
+  entitlements?: string[];
   /** Current session ID. Present when enableSessionTracking is true. */
   sessionId?: string;
   /** Persisted user traits set via identify(). Forwarded to backends for segmentation. */
@@ -212,6 +253,16 @@ export interface SunglassesConfig {
   appName?: string;
   appVersion?: string;
   appBuild?: string;
+  /** App variant / build flavor, e.g. 'pro' | 'lite' | 'beta'. Attached to context.app.variant. */
+  appVariant?: string;
+  /** OTA / app update info for the currently running bundle. Attached to context.app.update. */
+  appUpdate?: AppUpdateInfo;
+  /** Deployment environment, e.g. 'production' | 'staging'. Attached to context.environment. */
+  environment?: string;
+  /** Enabled features / experiment variants (app-scoped). Attached to context.features. */
+  features?: string[];
+  /** Active user entitlements (user-scoped). Attached to context.entitlements. */
+  entitlements?: string[];
 
   // ── Developer ─────────────────────────────────────────────────────────────
   /** Enables verbose console logging. Never enable in production. */
@@ -332,6 +383,36 @@ export interface ISunglassesClient {
   unregister(...keys: string[]): void;
   /** Returns a snapshot of all currently registered super properties. */
   getRegisteredProperties(): Record<string, unknown>;
+
+  // ── App metadata ──────────────────────────────────────────────────────────
+  /**
+   * Set the deployment environment (e.g. 'production', 'staging'). Attached to
+   * every subsequent event's `context.environment`. In-memory only.
+   */
+  setEnvironment(environment: string): void;
+  /**
+   * Set OTA / app update info for the currently running bundle. Attached to
+   * every subsequent event's `context.app.update`. In-memory only.
+   */
+  setAppUpdate(update: AppUpdateInfo): void;
+  /**
+   * Set the list of enabled features / experiment variants (app-scoped).
+   * Attached to every subsequent event's `context.features`. In-memory only.
+   */
+  setFeatures(features: string[]): void;
+  /**
+   * Set the active user entitlements (user-scoped). Attached to every subsequent
+   * event's `context.entitlements`. Cleared by `reset()` and `deleteUserData()`.
+   * In-memory only.
+   */
+  setEntitlements(entitlements: string[]): void;
+  /**
+   * Merge a partial set of global app metadata. Only the provided keys are
+   * updated; omitted keys keep their current value. In-memory only.
+   */
+  setAppMetadata(meta: Partial<AppMetadata>): void;
+  /** Returns a snapshot of the current global app metadata. */
+  getAppMetadata(): AppMetadata;
 
   // ── Consent ───────────────────────────────────────────────────────────────
   optIn(): Promise<void>;

@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/sunglasses-adapter-starfish",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Starfish adapter for SunGlasses — pushes event batches as JSON to a Starfish events collection (server encodes to Parquet)",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
