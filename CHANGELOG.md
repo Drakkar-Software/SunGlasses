@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-06-26
+
+### Added
+
+- **`captureException` helper** (`@drakkar.software/sunglasses-core`): framework-agnostic `captureException(client, error, options?)` that normalizes any thrown value (`Error`, string, or arbitrary object) into a `$error` event and routes it through the consent-gated `capture()`. Options cover `handled` (default `true`), `level`, `includeStack` (default `false`, parses both V8/web and React Native/Hermes stack formats), `maxStackFrames`, `maxMessageLength`, `ignorePatterns`, extra `properties`, and a `beforeCapture` transform. New exported type `CaptureExceptionOptions`.
+- **Built-in `SunglassesErrorBoundary`** (`@drakkar.software/sunglasses-react` and `@drakkar.software/sunglasses-react-native`): React error boundary that captures render-phase errors as `$error` events (`$error_handled: true`) with no Sentry adapter required. Resolves the client from the nearest `<SunglassesProvider>` by default, with an optional `client` prop override; accepts a `fallback` and a `config` (`CaptureExceptionOptions`).
+- **Opt-in global error autocapture** (`@drakkar.software/sunglasses-react` and `@drakkar.software/sunglasses-react-native`): new `autoCaptureErrors` prop on `SunglassesProvider` captures unhandled errors as `$error` events (`$error_handled: false`). On web it listens to `window` `'error'` and `'unhandledrejection'`; on React Native it chains a global `ErrorUtils` handler (preserving and still invoking the previous one). Pass `true` for defaults or a `CaptureExceptionOptions` object. Listeners/handlers are cleaned up on unmount. Default: off.
+
 ## [0.9.0] — 2026-06-26
 
 ### Added

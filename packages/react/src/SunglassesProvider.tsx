@@ -1,5 +1,10 @@
 import React, { useEffect } from 'react';
-import type { ISunglassesClient, ScreenTrackingOptions } from '@drakkar.software/sunglasses-core';
+import type {
+  ISunglassesClient,
+  ScreenTrackingOptions,
+  CaptureExceptionOptions,
+} from '@drakkar.software/sunglasses-core';
+import { captureException } from '@drakkar.software/sunglasses-core';
 import { SunglassesContext } from './context.js';
 import { useScreenTracking } from './useScreenTracking.js';
 
@@ -8,6 +13,13 @@ export interface SunglassesProviderProps {
   client: ISunglassesClient;
   /** Optional screen tracking configuration. */
   screenTracking?: ScreenTrackingOptions;
+  /**
+   * Automatically capture unhandled global errors as `$error` events
+   * (`$error_handled: false`). Listens to `window` `'error'` and
+   * `'unhandledrejection'`. Pass `true` for defaults, or an options object to
+   * configure truncation / stack inclusion. Default: off.
+   */
+  autoCaptureErrors?: boolean | CaptureExceptionOptions;
   children: React.ReactNode;
 }
 
@@ -33,6 +45,7 @@ export interface SunglassesProviderProps {
 export function SunglassesProvider({
   client,
   screenTracking,
+  autoCaptureErrors,
   children,
 }: SunglassesProviderProps): React.ReactElement {
   // Auto-shutdown on unmount
@@ -41,6 +54,28 @@ export function SunglassesProvider({
       client.shutdown().catch(() => {});
     };
   }, [client]);
+
+  // Optional: auto-capture unhandled global errors and promise rejections.
+  useEffect(() => {
+    if (!autoCaptureErrors) return;
+    if (typeof window === 'undefined') return;
+    const options: CaptureExceptionOptions =
+      typeof autoCaptureErrors === 'object' ? autoCaptureErrors : {};
+
+    const onError = (event: ErrorEvent): void => {
+      captureException(client, event.error ?? event.message, { handled: false, ...options });
+    };
+    const onRejection = (event: PromiseRejectionEvent): void => {
+      captureException(client, event.reason, { handled: false, ...options });
+    };
+
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, [client, autoCaptureErrors]);
 
   // Flush queued events when the page is hidden (tab switch, browser close).
   // This is more reliable than relying on unmount, which rarely fires in SPAs.

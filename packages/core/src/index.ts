@@ -23,6 +23,10 @@ export { LocalEventArchive } from './LocalEventArchive.js';
 // Type-safe event catalog utility
 export { asTyped } from './asTyped.js';
 
+// Error capture helper (shared by error boundaries + provider global handlers)
+export { captureException } from './captureException.js';
+export type { CaptureExceptionOptions } from './captureException.js';
+
 // Module-level singleton helper — safe noop before init()
 export { createLazyClient } from './LazyClient.js';
 

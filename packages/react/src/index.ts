@@ -5,6 +5,8 @@ export { useSunglasses } from './context.js';
 export { useScreenTracking } from './useScreenTracking.js';
 export { useCapture } from './useCapture.js';
 export { useConsentStatus } from './useConsentStatus.js';
+export { SunglassesErrorBoundary } from './SunglassesErrorBoundary.js';
+export type { SunglassesErrorBoundaryProps } from './SunglassesErrorBoundary.js';
 
 // Re-export core types for convenience
 export type {
@@ -13,5 +15,6 @@ export type {
   SunglassesEvent,
   ConsentStatus,
   ScreenTrackingOptions,
+  CaptureExceptionOptions,
 } from '@drakkar.software/sunglasses-core';
-export { SunglassesCore } from '@drakkar.software/sunglasses-core';
+export { SunglassesCore, captureException } from '@drakkar.software/sunglasses-core';

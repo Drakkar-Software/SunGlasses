@@ -439,9 +439,75 @@ class SecureStorageAdapter implements IStorageAdapter {
 }
 ```
 
+## Built-in Error Capture (no adapter required)
+
+The `react` and `react-native` packages ship error capture out of the box — no Sentry adapter needed. Everything emits `$error` events through the consent-gated `capture()` and runs through PiiSanitizer automatically.
+
+### `captureException` (manual / try-catch)
+
+`captureException` lives in core and is re-exported from both framework packages. It normalizes any thrown value (an `Error`, a string, or an arbitrary object) into a `$error` event:
+
+```ts
+import { captureException } from '@drakkar.software/sunglasses-react'; // or -react-native
+
+try {
+  doRiskyThing();
+} catch (err) {
+  captureException(client, err); // $error_handled: true
+}
+```
+
+Options (`CaptureExceptionOptions`):
+
+```ts
+captureException(client, err, {
+  handled: true,            // false for unhandled errors — default true
+  level: 'error',           // Sentry-compatible severity
+  includeStack: false,      // include $error_stack (parses web + RN/Hermes) — default false (privacy)
+  maxStackFrames: 5,        // max frames when includeStack is true
+  maxMessageLength: 200,    // truncate error messages — they can contain PII
+  ignorePatterns: [/ResizeObserver/],
+  properties: { screen: 'Checkout' }, // extra props (lower precedence than $error_*)
+  beforeCapture: (props) => ({ ...props, app_version: '1.2.0' }), // transform or drop (null)
+});
+```
+
+### Built-in error boundary (render-phase errors)
+
+`SunglassesErrorBoundary` catches render-phase errors and captures them with `$error_handled: true`. It reads the client from the nearest `<SunglassesProvider>` by default (pass `client` to override):
+
+```tsx
+import { SunglassesProvider, SunglassesErrorBoundary } from '@drakkar.software/sunglasses-react'; // or -react-native
+
+<SunglassesProvider client={client}>
+  <SunglassesErrorBoundary fallback={<ErrorPage />} config={{ includeStack: true }}>
+    <App />
+  </SunglassesErrorBoundary>
+</SunglassesProvider>
+```
+
+### Global error autocapture (opt-in)
+
+Enable `autoCaptureErrors` on the provider to capture unhandled errors with `$error_handled: false`. On web it listens to `window` `'error'` and `'unhandledrejection'`; on React Native it chains a global `ErrorUtils` handler (the previous handler is preserved and still invoked). Pass `true` for defaults or a `CaptureExceptionOptions` object:
+
+```tsx
+<SunglassesProvider client={client} autoCaptureErrors>
+  <App />
+</SunglassesProvider>
+
+// or with options
+<SunglassesProvider client={client} autoCaptureErrors={{ includeStack: true, ignorePatterns: [/Network request failed/] }}>
+  <App />
+</SunglassesProvider>
+```
+
+Combine all three for full coverage: the boundary catches render errors, `autoCaptureErrors` catches global/unhandled errors, and `captureException` handles your own try/catch blocks. Error boundaries inherently do not catch errors in event handlers or async code — use `captureException` there.
+
+---
+
 ## Sentry Bridge (`@drakkar.software/sunglasses-adapter-sentry`)
 
-Capture unhandled errors as `$error` analytics events via the Sentry `beforeSend` hook. All errors run through the existing PiiSanitizer middleware automatically. No `@sentry/*` runtime dependency — bring your own Sentry SDK.
+Capture unhandled errors as `$error` analytics events via the Sentry `beforeSend` hook. All errors run through the existing PiiSanitizer middleware automatically. No `@sentry/*` runtime dependency — bring your own Sentry SDK. Prefer the built-in error capture above unless you already use Sentry.
 
 ```bash
 pnpm add @drakkar.software/sunglasses-adapter-sentry
