@@ -35,7 +35,11 @@ pnpm --filter example-rn start
 
 ## Documentation site
 
+The `website/` directory is a standalone Docusaurus project (not a pnpm workspace package). Install its dependencies once before running docs commands:
+
 ```bash
+cd website && pnpm install --ignore-workspace
+cd ..                 # back to repo root
 pnpm docs:dev         # Docusaurus dev server
 pnpm docs:build       # Production build
 ```
