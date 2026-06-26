@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
 import { captureUtmParams } from '../captureUtmParams.js';
 

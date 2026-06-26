@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-06-26
+
+### Added
+
+- **Unhandled promise rejection capture** (`@drakkar.software/sunglasses-react-native`): the `SunglassesProvider` `autoCaptureErrors` option now captures unhandled promise rejections as `$error` events (`$error_handled: false`) in addition to `ErrorUtils` uncaught errors. Uses React Native's bundled rejection tracker (`promise/setimmediate/rejection-tracking`, the same mechanism Sentry uses) when available, with a global `unhandledrejection` listener fallback. Exposed standalone as the new `attachUnhandledRejectionHandler(client, options?)` helper.
+- **Error deduplication** (`@drakkar.software/sunglasses-core`): `captureException` now drops errors with the same fingerprint (type + message + first stack frame) captured within a short window, collapsing the common double-capture cases (e.g. an error boundary plus `console.error` capture reporting the same render error, or a global handler firing repeatedly). Configurable via new `dedupe` (default `true`) and `dedupeWindowMs` (default `1000`) options on `CaptureExceptionOptions`. State is isolated per client.
+- **Global error bus** (`@drakkar.software/sunglasses-core`): new `publishGlobalError()` / `subscribeGlobalError()` helpers and `GlobalErrorInfo` type — an in-process pub/sub the providers publish to and the new global error boundary consumes. Nothing is persisted or sent by the bus itself.
+- **`SunglassesGlobalErrorBoundary`** (`@drakkar.software/sunglasses-react`, `@drakkar.software/sunglasses-react-native`): a superset of `SunglassesErrorBoundary` that also renders its fallback for fatal non-render errors (uncaught errors and, opt-in, unhandled rejections) surfaced by the provider's `autoCaptureErrors` handlers. Render-phase errors are captured here (`$error_handled: true`); global errors are captured by the provider (no duplicate events). New `includeNonFatalGlobalErrors` and `includeUnhandledRejections` props (both default `false`).
+- **`wrapExpoRouterErrorBoundary`** (`@drakkar.software/sunglasses-react-native`): wraps an Expo Router route-level `ErrorBoundary` export so render errors that reach it are also captured as `$error` events (`$error_handled: true`) with route context (`$route_path`, `$route_name`). The original boundary still renders unchanged; each distinct error is captured once.
+- **Granular `unhandledRejections` toggle** (`@drakkar.software/sunglasses-core`, `@drakkar.software/sunglasses-react`, `@drakkar.software/sunglasses-react-native`): `AutoCaptureErrorsOptions` gains an `unhandledRejections` flag (default `true`) so uncaught errors (`globalHandlers`) and promise rejections can be toggled independently, matching PostHog's `uncaughtExceptions` / `unhandledRejections` split.
+
+### Changed
+
+- **`captureException` de-duplicates by default** (`@drakkar.software/sunglasses-core`): identical errors captured in quick succession are now collapsed to a single `$error` event. Pass `dedupe: false` to restore the previous always-capture behavior.
+
 ### Removed
 
 - **`@drakkar.software/sunglasses-adapter-sentry`** and **`@drakkar.software/sunglasses-adapter-posthog`** — removed in favor of built-in error capture (`captureException`, `SunglassesErrorBoundary`, `autoCaptureErrors`) in `@drakkar.software/sunglasses-react` and `@drakkar.software/sunglasses-react-native`.
@@ -259,4 +274,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `apps/example-rn` — Expo Router demo application
 - Privacy-first defaults: opt-out by default, built-in PII sanitization (email, phone, IPv4, credit card), anonymous UUID identity
 
-[unreleased]: https://github.com/herklos/sunglasses/compare/HEAD...HEAD
+[unreleased]: https://github.com/herklos/sunglasses/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/herklos/sunglasses/compare/v0.11.0...v0.12.0
