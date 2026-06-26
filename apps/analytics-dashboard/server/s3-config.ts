@@ -42,6 +42,11 @@ export function configFromEnv(): S3Config | null {
   };
 }
 
+/** When true, apply S3_* / AWS_* from process.env on startup. Default: UI or saved file only. */
+export function envAutoConfigureEnabled(): boolean {
+  return process.env['S3_CONFIGURE_FROM_ENV'] === 'true';
+}
+
 export function parseConfigInput(body: S3ConfigInput): { config: S3Config; useIam: boolean } | string {
   const s3Bucket = body.s3Bucket?.trim() ?? '';
   if (!s3Bucket) return 'S3 bucket is required';
@@ -83,4 +88,27 @@ export function publicStatus(
     authMode: !config ? 'none' : useIam || (!config.accessKeyId && !config.secretAccessKey) ? 'iam' : 'keys',
     error,
   };
+}
+
+/** Turn DuckDB/httpfs errors into a short user-facing message. */
+export function formatS3Error(raw: string, config?: S3Config | null): string {
+  const firstLine = raw.split('\n').map((l) => l.trim()).find(Boolean) ?? raw;
+  const endpoint = config?.endpointUrl || null;
+
+  if (/could not connect|ECONNREFUSED|connection refused|ENOTFOUND/i.test(firstLine)) {
+    if (endpoint && /localhost|127\.0\.0\.1/.test(endpoint)) {
+      return `Cannot reach ${endpoint} — is MinIO (or your local S3) running? See apps/analytics-dashboard/README.md or website/docs/backend/local-testing.`;
+    }
+    return `Cannot reach S3${endpoint ? ` at ${endpoint}` : ''}. Check network, credentials, and bucket name.`;
+  }
+
+  if (/403|access denied|invalid access key|signature/i.test(firstLine)) {
+    return 'S3 access denied — check access key, secret, and bucket permissions.';
+  }
+
+  if (/404|not found|nosuchbucket/i.test(firstLine)) {
+    return `S3 bucket "${config?.s3Bucket ?? '?'}" was not found — create it or fix S3_BUCKET.`;
+  }
+
+  return firstLine.replace(/\s+LINE\s+\d+:.*$/i, '').trim();
 }

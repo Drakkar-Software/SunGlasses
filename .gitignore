@@ -49,6 +49,15 @@ web-build/
 *.duckdb
 *.duckdb.wal
 
+# Analytics dashboard — UI-saved S3 credentials (local only)
+.s3-config.local.json
+apps/analytics-dashboard/.s3-config.local.json
+.starfish-config.local.json
+apps/analytics-dashboard/.starfish-config.local.json
+apps/analytics-dashboard/admin.cap.json
+.parquet-cache/
+apps/analytics-dashboard/.parquet-cache/
+
 # Changesets
 .changeset/*.md
 !.changeset/config.json

@@ -418,6 +418,55 @@ code {
   color: var(--text);
 }
 
+.form-field textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-family: ui-monospace, monospace;
+  color: var(--text);
+  resize: vertical;
+  min-height: 120px;
+}
+
+.source-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.source-tab {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.source-tab.active {
+  background: var(--surface);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.sync-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.sync-error {
+  color: var(--danger-text);
+}
+
 .form-checkbox {
   display: flex;
   flex-direction: row;

@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import {
-  configureAndTest,
+  configureDirectS3,
+  configureStarfish,
+  getDataSource,
   getLastError,
   getRuntimeConfig,
   getS3Source,
@@ -12,13 +14,30 @@ import {
   queryRaw,
   usesIamAuth,
   markInitFailed,
+  resetDb,
 } from './duckdb.js';
+import { statusForS3, statusForStarfish, type ConfigStatus } from './config-status.js';
 import {
-  configFromEnv,
+  configFromEnv as s3ConfigFromEnv,
+  envAutoConfigureEnabled,
+  formatS3Error,
   parseConfigInput,
-  publicStatus,
   type S3ConfigInput,
 } from './s3-config.js';
+import { clearStoredConfig, loadStoredConfig, storeConfig } from './s3-config-store.js';
+import {
+  configFromEnv as starfishConfigFromEnv,
+  parseStarfishInput,
+  type StarfishConfig,
+  type StarfishConfigInput,
+} from './starfish-config.js';
+import {
+  clearStoredStarfishConfig,
+  loadStoredStarfishConfig,
+  storeStarfishConfig,
+} from './starfish-config-store.js';
+import { testStarfishConnection } from './starfish-client.js';
+import { computeSyncStats, syncParquetCache } from './starfish-sync.js';
 import {
   getOverview,
   getTimeseries,
@@ -37,6 +56,9 @@ const PORT = parseInt(process.env['PORT'] ?? '8788', 10);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = join(__dirname, '..', 'dist');
 
+let _starfishConfig: StarfishConfig | null = null;
+let _syncStats = null as Awaited<ReturnType<typeof computeSyncStats>> | null;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -48,6 +70,10 @@ interface RangeQuery {
   event?: string;
   day?: string;
 }
+
+type ConfigInput =
+  | (S3ConfigInput & { source?: 'direct_s3' })
+  | StarfishConfigInput;
 
 function parseRange(q: RangeQuery) {
   return {
@@ -79,13 +105,30 @@ export function isReadOnlySql(sql: string): boolean {
   return !forbidden.test(trimmed);
 }
 
-function configStatusPayload() {
-  return publicStatus(
-    getRuntimeConfig(),
-    isDbReady(),
-    getLastError(),
-    usesIamAuth(),
-  );
+function configStatusPayload(): ConfigStatus {
+  const ds = getDataSource();
+  if (ds === 'starfish') {
+    return statusForStarfish(_starfishConfig, isDbReady(), getLastError(), _syncStats);
+  }
+  return statusForS3(getRuntimeConfig(), isDbReady(), getLastError(), usesIamAuth());
+}
+
+async function applyStarfishConfig(config: StarfishConfig): Promise<void> {
+  await testStarfishConnection(config);
+  _syncStats = await syncParquetCache(config);
+  await configureStarfish(config.cacheDir);
+  _starfishConfig = config;
+}
+
+function formatStarfishError(raw: string): string {
+  const firstLine = raw.split('\n').map((l) => l.trim()).find(Boolean) ?? raw;
+  if (/401|403|unauthorized|forbidden/i.test(firstLine)) {
+    return 'Starfish access denied — check admin cap-cert, device private key, and PLATFORM_USERID wiring on the sync server.';
+  }
+  if (/ECONNREFUSED|fetch failed|ENOTFOUND/i.test(firstLine)) {
+    return `Cannot reach Starfish at the configured URL. Is the sync server running?`;
+  }
+  return firstLine;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,29 +139,90 @@ const app = Fastify({ logger: false });
 
 app.get('/api/health', async (_req, reply) => {
   const status = configStatusPayload();
-  return reply.send({ ok: true, ready: status.ready, source: status.source ?? (getS3Source() || null) });
+  return reply.send({
+    ok: true,
+    ready: status.ready,
+    dataSource: status.dataSource,
+    source: status.source,
+  });
 });
 
 app.get('/api/config/status', async (_req, reply) => {
   return reply.send({ ok: true, ...configStatusPayload() });
 });
 
-app.post<{ Body: S3ConfigInput }>('/api/config', async (req, reply) => {
-  const parsed = parseConfigInput(req.body ?? {});
+app.post<{ Body: ConfigInput }>('/api/config', async (req, reply) => {
+  const body = req.body ?? {};
+  const source = body.source ?? ('baseUrl' in body || 'cap' in body ? 'starfish' : 'direct_s3');
+
+  if (source === 'starfish') {
+    const parsed = parseStarfishInput(body as StarfishConfigInput);
+    if (typeof parsed === 'string') {
+      return reply.code(400).send({ ok: false, error: parsed });
+    }
+    try {
+      resetDb();
+      _starfishConfig = null;
+      _syncStats = null;
+      await clearStoredConfig();
+      await applyStarfishConfig(parsed);
+      await storeStarfishConfig(parsed);
+      console.log(`[dashboard] Starfish configured → ${getS3Source()}`);
+      return reply.send({ ok: true, ...configStatusPayload() });
+    } catch (e) {
+      const message = formatStarfishError(e instanceof Error ? e.message : 'Starfish connection failed');
+      markInitFailed(message);
+      console.error('[dashboard] Starfish config failed:', message);
+      return reply.code(400).send({ ok: false, ...configStatusPayload(), error: message });
+    }
+  }
+
+  const parsed = parseConfigInput(body as S3ConfigInput);
   if (typeof parsed === 'string') {
     return reply.code(400).send({ ok: false, error: parsed });
   }
 
   try {
-    await configureAndTest(parsed.config, parsed.useIam);
+    resetDb();
+    _starfishConfig = null;
+    _syncStats = null;
+    await clearStoredStarfishConfig();
+    await configureDirectS3(parsed.config, parsed.useIam);
+    await storeConfig(parsed.config, parsed.useIam);
     console.log(`[dashboard] S3 configured → ${getS3Source()}`);
     return reply.send({ ok: true, ...configStatusPayload() });
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'S3 connection failed';
+    const message = formatS3Error(
+      e instanceof Error ? e.message : 'S3 connection failed',
+      parsed.config,
+    );
     markInitFailed(message);
     console.error('[dashboard] S3 config failed:', message);
-    const status = configStatusPayload();
-    return reply.code(400).send({ ok: false, ...status, error: message });
+    return reply.code(400).send({ ok: false, ...configStatusPayload(), error: message });
+  }
+});
+
+app.delete('/api/config', async (_req, reply) => {
+  await clearStoredConfig();
+  await clearStoredStarfishConfig();
+  resetDb();
+  _starfishConfig = null;
+  _syncStats = null;
+  console.log('[dashboard] configuration cleared');
+  return reply.send({ ok: true, ...configStatusPayload() });
+});
+
+app.post('/api/sync', async (_req, reply) => {
+  if (getDataSource() !== 'starfish' || !_starfishConfig) {
+    return reply.code(400).send({ ok: false, error: 'Starfish mode is not configured' });
+  }
+  try {
+    _syncStats = await syncParquetCache(_starfishConfig);
+    await configureStarfish(_starfishConfig.cacheDir);
+    return reply.send({ ok: true, ...configStatusPayload() });
+  } catch (e) {
+    const message = formatStarfishError(e instanceof Error ? e.message : 'Sync failed');
+    return reply.code(400).send({ ok: false, ...configStatusPayload(), error: message });
   }
 });
 
@@ -128,7 +232,7 @@ function requireDb(reply: { code: (n: number) => { send: (b: unknown) => unknown
     reply.code(503).send({
       ok: false,
       ...status,
-      error: 'S3 backend is not configured',
+      error: 'Data backend is not configured',
     });
     return false;
   }
@@ -284,27 +388,91 @@ async function registerStatic() {
 // Startup
 // ---------------------------------------------------------------------------
 
-async function tryEnvConfig(): Promise<void> {
-  const env = configFromEnv();
+async function tryStoredStarfish(): Promise<boolean> {
+  const stored = await loadStoredStarfishConfig();
+  if (!stored) return false;
+  try {
+    await applyStarfishConfig(stored.config);
+    console.log(`[dashboard] Starfish ready from saved config → ${getS3Source()}`);
+    return true;
+  } catch (e) {
+    const message = formatStarfishError(
+      e instanceof Error ? e.message : 'Starfish connection failed',
+    );
+    markInitFailed(message);
+    console.warn(`[dashboard] Saved Starfish config failed — ${message}`);
+    return false;
+  }
+}
+
+async function tryStoredS3(): Promise<boolean> {
+  const stored = await loadStoredConfig();
+  if (!stored) return false;
+  try {
+    await configureDirectS3(stored.config, stored.useIam);
+    console.log(`[dashboard] S3 ready from saved UI config → ${getS3Source()}`);
+    return true;
+  } catch (e) {
+    const message = formatS3Error(
+      e instanceof Error ? e.message : 'S3 connection failed',
+      stored.config,
+    );
+    markInitFailed(message);
+    console.warn(`[dashboard] Saved S3 config failed — ${message}`);
+    return false;
+  }
+}
+
+async function tryEnvStarfish(): Promise<void> {
+  const env = starfishConfigFromEnv();
   if (!env) return;
   try {
-    await configureAndTest(env, !env.accessKeyId && !env.secretAccessKey);
+    await applyStarfishConfig(env);
+    console.log(`[dashboard] Starfish ready from env → ${getS3Source()}`);
+  } catch (e) {
+    const message = formatStarfishError(
+      e instanceof Error ? e.message : 'Starfish connection failed',
+    );
+    markInitFailed(message);
+    console.warn(`[dashboard] Starfish not ready from .env — ${message}`);
+  }
+}
+
+async function tryEnvS3(): Promise<void> {
+  const env = s3ConfigFromEnv();
+  if (!env) return;
+  try {
+    await configureDirectS3(env, !env.accessKeyId && !env.secretAccessKey);
     console.log(`[dashboard] S3 ready from env → ${getS3Source()}`);
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'S3 connection failed';
+    const message = formatS3Error(
+      e instanceof Error ? e.message : 'S3 connection failed',
+      env,
+    );
     markInitFailed(message);
-    console.error('[dashboard] env S3 config failed:', message);
-    console.error('[dashboard] open the UI to configure S3 credentials');
+    console.warn(`[dashboard] S3 not ready from .env — ${message}`);
+  }
+}
+
+async function bootstrap(): Promise<void> {
+  if (await tryStoredStarfish()) return;
+  if (await tryStoredS3()) return;
+  if (process.env['STARFISH_CONFIGURE_FROM_ENV'] === 'true') {
+    await tryEnvStarfish();
+    return;
+  }
+  if (envAutoConfigureEnabled()) {
+    await tryEnvS3();
   }
 }
 
 async function start() {
   try {
-    await tryEnvConfig();
+    await bootstrap();
     await registerStatic();
     await app.listen({ port: PORT, host: '0.0.0.0' });
-    const label = isDbReady() ? getS3Source() : '(awaiting S3 configuration)';
-    console.log(`[dashboard] listening on port ${PORT}  →  S3 ${label}`);
+    const label = isDbReady() ? getS3Source() : '(awaiting configuration)';
+    console.log(`[dashboard] listening on port ${PORT}  →  ${label}`);
   } catch (err) {
     console.error('[dashboard] startup failed:', err);
     process.exit(1);

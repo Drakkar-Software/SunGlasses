@@ -4,7 +4,16 @@ export interface DateRangeParams {
   limit?: number;
 }
 
+export type DataSourceKind = 'direct_s3' | 'starfish' | null;
+
+export interface SyncStats {
+  totalFiles: number;
+  cacheBytes: number;
+  lastSyncAt: string | null;
+}
+
 export interface S3ConfigInput {
+  source?: 'direct_s3';
   s3Bucket?: string;
   s3Prefix?: string;
   awsRegion?: string;
@@ -14,14 +23,78 @@ export interface S3ConfigInput {
   useIam?: boolean;
 }
 
-export interface S3ConfigStatus {
+export interface StarfishConfigInput {
+  source?: 'starfish';
+  baseUrl?: string;
+  app?: string;
+  cap?: string;
+  devEdPrivHex?: string;
+  cacheDir?: string;
+}
+
+export type ConfigInput = S3ConfigInput | StarfishConfigInput;
+
+const BROWSER_CONFIG_KEY = 'sunglasses-dashboard-browser-config';
+
+export interface BrowserConfig {
+  mode?: 'direct_s3' | 'starfish';
+  remember?: boolean;
+  s3Bucket?: string;
+  s3Prefix?: string;
+  awsRegion?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  endpointUrl?: string;
+  useIam?: boolean;
+  baseUrl?: string;
+  app?: string;
+  capJson?: string;
+  devEdPrivHex?: string;
+}
+
+export function loadBrowserConfig(): BrowserConfig | null {
+  try {
+    const raw = sessionStorage.getItem(BROWSER_CONFIG_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as BrowserConfig;
+  } catch {
+    return null;
+  }
+}
+
+export function saveBrowserConfig(config: BrowserConfig): void {
+  if (!config.remember) {
+    const { secretAccessKey: _s, accessKeyId: _k, devEdPrivHex: _d, capJson: _c, ...rest } = config;
+    sessionStorage.setItem(BROWSER_CONFIG_KEY, JSON.stringify({ ...rest, remember: false }));
+    return;
+  }
+  sessionStorage.setItem(BROWSER_CONFIG_KEY, JSON.stringify(config));
+}
+
+export function canAutoConnectFromBrowser(): boolean {
+  const c = loadBrowserConfig();
+  if (!c?.remember) return false;
+  if (c.mode === 'starfish') {
+    return Boolean(c.baseUrl && c.app && c.capJson && c.devEdPrivHex);
+  }
+  if (!c.s3Bucket) return false;
+  if (c.useIam) return true;
+  return Boolean(c.accessKeyId && c.secretAccessKey);
+}
+
+export interface ConfigStatus {
   ready: boolean;
+  dataSource: DataSourceKind;
   source: string | null;
   bucket: string | null;
   prefix: string;
   region: string;
   endpointUrl: string | null;
   authMode: 'keys' | 'iam' | 'none';
+  baseUrl: string | null;
+  app: string | null;
+  cacheDir: string | null;
+  sync: SyncStats | null;
   error: string | null;
 }
 
@@ -158,25 +231,34 @@ export function daysAgo(n: number): string {
   return formatDate(d);
 }
 
-export async function fetchConfigStatus(): Promise<S3ConfigStatus> {
+function parseConfigStatus(body: Record<string, unknown>): ConfigStatus {
+  return {
+    ready: Boolean(body.ready),
+    dataSource: (body.dataSource as DataSourceKind) ?? null,
+    source: (body.source as string | null) ?? null,
+    bucket: (body.bucket as string | null) ?? null,
+    prefix: (body.prefix as string) ?? 'events',
+    region: (body.region as string) ?? 'us-east-1',
+    endpointUrl: (body.endpointUrl as string | null) ?? null,
+    authMode: (body.authMode as ConfigStatus['authMode']) ?? 'none',
+    baseUrl: (body.baseUrl as string | null) ?? null,
+    app: (body.app as string | null) ?? null,
+    cacheDir: (body.cacheDir as string | null) ?? null,
+    sync: (body.sync as SyncStats | null) ?? null,
+    error: (body.error as string | null) ?? null,
+  };
+}
+
+export async function fetchConfigStatus(): Promise<ConfigStatus> {
   const res = await fetch('/api/config/status');
   const body = await res.json();
   if (!res.ok || !body.ok) {
     throw new Error(body.error ?? `Config status failed (${res.status})`);
   }
-  return {
-    ready: Boolean(body.ready),
-    source: body.source ?? null,
-    bucket: body.bucket ?? null,
-    prefix: body.prefix ?? 'events',
-    region: body.region ?? 'us-east-1',
-    endpointUrl: body.endpointUrl ?? null,
-    authMode: body.authMode ?? 'none',
-    error: body.error ?? null,
-  };
+  return parseConfigStatus(body);
 }
 
-export async function saveS3Config(input: S3ConfigInput): Promise<S3ConfigStatus> {
+export async function saveConfig(input: ConfigInput): Promise<ConfigStatus> {
   const res = await fetch('/api/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -184,16 +266,38 @@ export async function saveS3Config(input: S3ConfigInput): Promise<S3ConfigStatus
   });
   const body = await res.json();
   if (!res.ok || !body.ok) {
-    throw new Error(body.error ?? `S3 configuration failed (${res.status})`);
+    throw new Error(body.error ?? `Configuration failed (${res.status})`);
   }
-  return {
-    ready: Boolean(body.ready),
-    source: body.source ?? null,
-    bucket: body.bucket ?? null,
-    prefix: body.prefix ?? 'events',
-    region: body.region ?? 'us-east-1',
-    endpointUrl: body.endpointUrl ?? null,
-    authMode: body.authMode ?? 'none',
-    error: body.error ?? null,
-  };
+  return parseConfigStatus(body);
 }
+
+export async function clearConfig(): Promise<void> {
+  await fetch('/api/config', { method: 'DELETE' });
+}
+
+export async function triggerSync(): Promise<ConfigStatus> {
+  const res = await fetch('/api/sync', { method: 'POST' });
+  const body = await res.json();
+  if (!res.ok || !body.ok) {
+    throw new Error(body.error ?? `Sync failed (${res.status})`);
+  }
+  return parseConfigStatus(body);
+}
+
+/** @deprecated Use saveConfig */
+export const saveS3Config = saveConfig;
+
+/** @deprecated Use clearConfig */
+export const clearS3Config = clearConfig;
+
+/** @deprecated Use loadBrowserConfig */
+export const loadBrowserS3Config = loadBrowserConfig;
+
+/** @deprecated Use saveBrowserConfig */
+export const saveBrowserS3Config = saveBrowserConfig;
+
+/** @deprecated Use ConfigStatus */
+export type S3ConfigStatus = ConfigStatus;
+
+/** @deprecated Use ConfigInput */
+export type { S3ConfigInput as LegacyS3ConfigInput };

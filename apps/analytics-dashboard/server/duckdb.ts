@@ -1,11 +1,15 @@
 import { DuckDBInstance } from '@duckdb/node-api';
+import { resolve } from 'node:path';
+import type { DataSourceKind } from './config-status.js';
 import type { S3Config } from './s3-config.js';
 
 // ---------------------------------------------------------------------------
 // Runtime config + singleton connection
 // ---------------------------------------------------------------------------
 
+let _dataSource: DataSourceKind = null;
 let _config: S3Config | null = null;
+let _cacheDir: string | null = null;
 let _useIam = false;
 let _ready = false;
 let _lastError: string | null = null;
@@ -14,8 +18,16 @@ let _conn: Awaited<ReturnType<InstanceType<typeof DuckDBInstance>['connect']>> |
 
 const sqlEscape = (s: string) => s.replace(/'/g, "''");
 
+export function getDataSource(): DataSourceKind {
+  return _dataSource;
+}
+
 export function getRuntimeConfig(): S3Config | null {
   return _config;
+}
+
+export function getCacheDir(): string | null {
+  return _cacheDir;
 }
 
 export function isDbReady(): boolean {
@@ -39,7 +51,7 @@ function resetConnection(): void {
   _ready = false;
 }
 
-async function setupConnection(config: S3Config, useIam: boolean): Promise<void> {
+async function setupDirectS3(config: S3Config, useIam: boolean): Promise<void> {
   resetConnection();
 
   _instance = await DuckDBInstance.create(':memory:');
@@ -89,42 +101,67 @@ async function setupConnection(config: S3Config, useIam: boolean): Promise<void>
       )
   `);
 
+  _dataSource = 'direct_s3';
   _config = config;
+  _cacheDir = null;
   _useIam = useIam || !hasKeys;
   _ready = true;
   _lastError = null;
 }
 
-/**
- * Initialise DuckDB with the current runtime config. Idempotent when already ready.
- */
-export async function initDb(config?: S3Config, useIam = false): Promise<void> {
-  if (_ready && _conn && !config) return;
+async function setupStarfishCache(cacheDir: string): Promise<void> {
+  resetConnection();
 
-  const cfg = config ?? _config;
-  if (!cfg?.s3Bucket) {
-    throw new Error('S3 bucket is not configured');
-  }
+  _instance = await DuckDBInstance.create(':memory:');
+  _conn = await _instance.connect();
 
-  await setupConnection(cfg, useIam);
+  const abs = resolve(cacheDir).replace(/\\/g, '/');
+  const parquetGlob = `${abs}/**/*.parquet`;
+  await _conn.run(`
+    CREATE OR REPLACE MACRO events() AS TABLE
+      SELECT * FROM read_parquet(
+        '${sqlEscape(parquetGlob)}',
+        hive_partitioning = true
+      )
+  `);
+
+  _dataSource = 'starfish';
+  _config = null;
+  _cacheDir = cacheDir;
+  _useIam = false;
+  _ready = true;
+  _lastError = null;
 }
 
 /**
- * Apply config and verify S3 Parquet is readable before marking ready.
+ * Configure DuckDB for direct S3 reads and verify connectivity.
  */
-export async function configureAndTest(config: S3Config, useIam: boolean): Promise<void> {
-  await setupConnection(config, useIam);
+export async function configureDirectS3(config: S3Config, useIam: boolean): Promise<void> {
+  await setupDirectS3(config, useIam);
   await testConnection();
 }
 
-/** Probe read access — succeeds even when the prefix has zero Parquet files. */
+/** @deprecated Use configureDirectS3 */
+export async function configureAndTest(config: S3Config, useIam: boolean): Promise<void> {
+  return configureDirectS3(config, useIam);
+}
+
+/**
+ * Configure DuckDB to read from a local Parquet cache (Starfish sync).
+ */
+export async function configureStarfish(cacheDir: string): Promise<void> {
+  await setupStarfishCache(cacheDir);
+  await testConnection();
+}
+
+/** Probe read access — succeeds even when there are zero Parquet files. */
 export async function testConnection(): Promise<void> {
   await conn().runAndReadAll(`SELECT count(*) AS n FROM events()`);
 }
 
 function conn() {
   if (!_conn || !_ready) {
-    throw new Error('S3 backend is not configured — connect via the setup screen');
+    throw new Error('Data backend is not configured — connect via the setup screen');
   }
   return _conn;
 }
@@ -145,6 +182,9 @@ export async function queryRaw(sql: string): Promise<QueryRow[]> {
 }
 
 export function getS3Source(): string {
+  if (_dataSource === 'starfish' && _cacheDir) {
+    return `starfish cache:${_cacheDir}`;
+  }
   if (!_config) return '';
   return `s3://${_config.s3Bucket}/${_config.s3Prefix}/`;
 }
@@ -152,4 +192,14 @@ export function getS3Source(): string {
 export function markInitFailed(message: string): void {
   resetConnection();
   _lastError = message;
+}
+
+/** Clear runtime connection and config (e.g. user disconnects from UI). */
+export function resetDb(): void {
+  resetConnection();
+  _dataSource = null;
+  _config = null;
+  _cacheDir = null;
+  _useIam = false;
+  _lastError = null;
 }

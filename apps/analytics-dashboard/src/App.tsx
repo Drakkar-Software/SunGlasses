@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { DateRangeParams, S3ConfigStatus } from './api';
+import type { ConfigStatus, DateRangeParams } from './api';
 import {
+  canAutoConnectFromBrowser,
+  clearConfig,
   daysAgo,
   fetchConfigStatus,
   fetchDau,
@@ -10,6 +12,8 @@ import {
   fetchTopErrors,
   fetchTopEvents,
   fetchTopScreens,
+  loadBrowserConfig,
+  saveConfig,
   type DauRow,
   type OverviewData,
   type RetentionRow,
@@ -18,13 +22,13 @@ import {
   type TopEventRow,
   type TopScreenRow,
 } from './api';
+import { DataSourcePanel, SyncBar } from './components/DataSourcePanel';
 import { DateRangeControls } from './components/DateRangeControls';
 import { DauChart } from './components/DauChart';
 import { ErrorsTable } from './components/ErrorsTable';
 import { KpiCards } from './components/KpiCards';
 import { QueryConsole } from './components/QueryConsole';
 import { RetentionTable } from './components/RetentionTable';
-import { S3ConfigPanel } from './components/S3ConfigPanel';
 import { ScreensTable } from './components/ScreensTable';
 import { TimeSeriesChart } from './components/TimeSeriesChart';
 import { TopEventsTable } from './components/TopEventsTable';
@@ -32,7 +36,7 @@ import { TopEventsTable } from './components/TopEventsTable';
 type Tab = 'overview' | 'breakdowns' | 'retention' | 'query';
 
 export function App() {
-  const [s3Status, setS3Status] = useState<S3ConfigStatus | null>(null);
+  const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -60,18 +64,54 @@ export function App() {
     let cancelled = false;
     (async () => {
       try {
-        const status = await fetchConfigStatus();
-        if (!cancelled) setS3Status(status);
+        let status = await fetchConfigStatus();
+        if (!cancelled && !status.ready && canAutoConnectFromBrowser()) {
+          const saved = loadBrowserConfig();
+          if (saved?.mode === 'starfish' && saved.baseUrl && saved.app && saved.capJson && saved.devEdPrivHex) {
+            try {
+              status = await saveConfig({
+                source: 'starfish',
+                baseUrl: saved.baseUrl,
+                app: saved.app,
+                cap: saved.capJson,
+                devEdPrivHex: saved.devEdPrivHex,
+              });
+            } catch {
+              // Show setup form with saved fields
+            }
+          } else if (saved?.s3Bucket) {
+            try {
+              status = await saveConfig({
+                source: 'direct_s3',
+                s3Bucket: saved.s3Bucket,
+                s3Prefix: saved.s3Prefix,
+                awsRegion: saved.awsRegion,
+                endpointUrl: saved.endpointUrl,
+                useIam: saved.useIam,
+                accessKeyId: saved.accessKeyId,
+                secretAccessKey: saved.secretAccessKey,
+              });
+            } catch {
+              // Show setup form with saved fields
+            }
+          }
+        }
+        if (!cancelled) setConfigStatus(status);
       } catch (e) {
         if (!cancelled) {
-          setS3Status({
+          setConfigStatus({
             ready: false,
+            dataSource: null,
             source: null,
             bucket: null,
             prefix: 'events',
             region: 'us-east-1',
             endpointUrl: null,
             authMode: 'none',
+            baseUrl: null,
+            app: null,
+            cacheDir: null,
+            sync: null,
             error: e instanceof Error ? e.message : 'Could not reach the API server',
           });
         }
@@ -84,8 +124,8 @@ export function App() {
     };
   }, []);
 
-  const handleConnected = useCallback((status: S3ConfigStatus) => {
-    setS3Status(status);
+  const handleConnected = useCallback((status: ConfigStatus) => {
+    setConfigStatus(status);
     setShowSettings(false);
     setError(null);
   }, []);
@@ -141,7 +181,7 @@ export function App() {
     }
   }, [range, retentionDay]);
 
-  const dashboardReady = s3Status?.ready === true && !showSettings;
+  const dashboardReady = configStatus?.ready === true && !showSettings;
 
   useEffect(() => {
     if (!dashboardReady || tab !== 'overview') return;
@@ -166,8 +206,8 @@ export function App() {
     );
   }
 
-  if (!s3Status?.ready || showSettings) {
-    return <S3ConfigPanel status={s3Status} onConnected={handleConnected} />;
+  if (!configStatus?.ready || showSettings) {
+    return <DataSourcePanel status={configStatus} onConnected={handleConnected} />;
   }
 
   const tabs: { id: Tab; label: string }[] = [
@@ -183,21 +223,29 @@ export function App() {
         <div className="header-brand">
           <h1>SunGlasses Analytics</h1>
           <p className="subtitle">
-            {s3Status.source ? (
+            {configStatus.source ? (
               <>
-                <span className="source-label">{s3Status.source}</span>
+                <span className="source-label">{configStatus.source}</span>
                 <button
                   type="button"
                   className="link-btn"
-                  onClick={() => setShowSettings(true)}
+                  onClick={() => {
+                    void (async () => {
+                      await clearConfig();
+                      const next = await fetchConfigStatus();
+                      setConfigStatus(next);
+                      setShowSettings(true);
+                    })();
+                  }}
                 >
-                  Change S3
+                  Change connection
                 </button>
               </>
             ) : (
-              'Read-only dashboard over S3 Parquet'
+              'Read-only analytics dashboard'
             )}
           </p>
+          <SyncBar status={configStatus} onSynced={setConfigStatus} />
         </div>
         <DateRangeControls range={range} onChange={setRange} />
       </header>
