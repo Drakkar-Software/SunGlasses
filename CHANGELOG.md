@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-06-26
+
+### Added
+
+- **Console error/warning capture** (`@drakkar.software/sunglasses-core`, `@drakkar.software/sunglasses-react`, `@drakkar.software/sunglasses-react-native`): new `patchConsole(client, options?)` core helper patches the global `console` (works on both web and React Native) to capture `console.error` — and, configurably, `console.warn` — as `$error` events (`$error_handled: false`, `$error_source: 'console'`, `console.warn` mapped to `$error_level: 'warning'`). The original console method is always called first, and a re-entrancy guard plus a `[SunGlasses]`-prefix skip prevent capture→log→capture recursion. New exported types `ConsoleCaptureOptions` and `ConsoleLevel`.
+- **`autoCaptureErrors` console + handler controls** (`@drakkar.software/sunglasses-react`, `@drakkar.software/sunglasses-react-native`): the `SunglassesProvider` `autoCaptureErrors` option now accepts the new `AutoCaptureErrorsOptions` object form with `console` (`boolean | ConsoleCaptureOptions`, default off) to opt into console capture and `globalHandlers` (default `true`) to toggle the `window` / `ErrorUtils` global handlers. Passing `true` is unchanged (global handlers only). Console patches are cleaned up on unmount.
+
 ## [0.10.0] — 2026-06-26
 
 ### Added

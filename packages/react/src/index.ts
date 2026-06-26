@@ -16,5 +16,7 @@ export type {
   ConsentStatus,
   ScreenTrackingOptions,
   CaptureExceptionOptions,
+  ConsoleCaptureOptions,
+  AutoCaptureErrorsOptions,
 } from '@drakkar.software/sunglasses-core';
-export { SunglassesCore, captureException } from '@drakkar.software/sunglasses-core';
+export { SunglassesCore, captureException, patchConsole } from '@drakkar.software/sunglasses-core';

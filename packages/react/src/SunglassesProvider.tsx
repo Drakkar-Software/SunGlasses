@@ -2,9 +2,9 @@ import React, { useEffect } from 'react';
 import type {
   ISunglassesClient,
   ScreenTrackingOptions,
-  CaptureExceptionOptions,
+  AutoCaptureErrorsOptions,
 } from '@drakkar.software/sunglasses-core';
-import { captureException } from '@drakkar.software/sunglasses-core';
+import { captureException, patchConsole } from '@drakkar.software/sunglasses-core';
 import { SunglassesContext } from './context.js';
 import { useScreenTracking } from './useScreenTracking.js';
 
@@ -14,12 +14,18 @@ export interface SunglassesProviderProps {
   /** Optional screen tracking configuration. */
   screenTracking?: ScreenTrackingOptions;
   /**
-   * Automatically capture unhandled global errors as `$error` events
-   * (`$error_handled: false`). Listens to `window` `'error'` and
-   * `'unhandledrejection'`. Pass `true` for defaults, or an options object to
-   * configure truncation / stack inclusion. Default: off.
+   * Automatically capture unhandled errors as `$error` events
+   * (`$error_handled: false`).
+   *
+   * - `true` installs the global handlers for `window` `'error'` and
+   *   `'unhandledrejection'`.
+   * - An options object additionally lets you toggle `globalHandlers` and opt
+   *   into `console` capture (`console.error` / `console.warn`), plus configure
+   *   truncation / stack inclusion / ignore patterns.
+   *
+   * Default: off.
    */
-  autoCaptureErrors?: boolean | CaptureExceptionOptions;
+  autoCaptureErrors?: boolean | AutoCaptureErrorsOptions;
   children: React.ReactNode;
 }
 
@@ -55,25 +61,37 @@ export function SunglassesProvider({
     };
   }, [client]);
 
-  // Optional: auto-capture unhandled global errors and promise rejections.
+  // Optional: auto-capture unhandled errors (global handlers + console).
   useEffect(() => {
     if (!autoCaptureErrors) return;
-    if (typeof window === 'undefined') return;
-    const options: CaptureExceptionOptions =
+    const options: AutoCaptureErrorsOptions =
       typeof autoCaptureErrors === 'object' ? autoCaptureErrors : {};
+    const cleanups: Array<() => void> = [];
 
-    const onError = (event: ErrorEvent): void => {
-      captureException(client, event.error ?? event.message, { handled: false, ...options });
-    };
-    const onRejection = (event: PromiseRejectionEvent): void => {
-      captureException(client, event.reason, { handled: false, ...options });
-    };
+    // Global window error / unhandledrejection handlers.
+    if (options.globalHandlers !== false && typeof window !== 'undefined') {
+      const onError = (event: ErrorEvent): void => {
+        captureException(client, event.error ?? event.message, { handled: false, ...options });
+      };
+      const onRejection = (event: PromiseRejectionEvent): void => {
+        captureException(client, event.reason, { handled: false, ...options });
+      };
+      window.addEventListener('error', onError);
+      window.addEventListener('unhandledrejection', onRejection);
+      cleanups.push(() => {
+        window.removeEventListener('error', onError);
+        window.removeEventListener('unhandledrejection', onRejection);
+      });
+    }
 
-    window.addEventListener('error', onError);
-    window.addEventListener('unhandledrejection', onRejection);
+    // Optional console capture.
+    if (options.console) {
+      const consoleOptions = typeof options.console === 'object' ? options.console : {};
+      cleanups.push(patchConsole(client, consoleOptions));
+    }
+
     return () => {
-      window.removeEventListener('error', onError);
-      window.removeEventListener('unhandledrejection', onRejection);
+      for (const cleanup of cleanups) cleanup();
     };
   }, [client, autoCaptureErrors]);
 

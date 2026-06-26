@@ -27,6 +27,10 @@ export { asTyped } from './asTyped.js';
 export { captureException } from './captureException.js';
 export type { CaptureExceptionOptions } from './captureException.js';
 
+// Console capture helper (used by the providers' autoCaptureErrors option)
+export { patchConsole } from './patchConsole.js';
+export type { ConsoleCaptureOptions, ConsoleLevel, AutoCaptureErrorsOptions } from './patchConsole.js';
+
 // Module-level singleton helper — safe noop before init()
 export { createLazyClient } from './LazyClient.js';
 

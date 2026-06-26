@@ -488,7 +488,7 @@ import { SunglassesProvider, SunglassesErrorBoundary } from '@drakkar.software/s
 
 ### Global error autocapture (opt-in)
 
-Enable `autoCaptureErrors` on the provider to capture unhandled errors with `$error_handled: false`. On web it listens to `window` `'error'` and `'unhandledrejection'`; on React Native it chains a global `ErrorUtils` handler (the previous handler is preserved and still invoked). Pass `true` for defaults or a `CaptureExceptionOptions` object:
+Enable `autoCaptureErrors` on the provider to capture unhandled errors with `$error_handled: false`. On web it listens to `window` `'error'` and `'unhandledrejection'`; on React Native it chains a global `ErrorUtils` handler (the previous handler is preserved and still invoked). Pass `true` for defaults or an `AutoCaptureErrorsOptions` object (which also supports `console` capture and a `globalHandlers` toggle — see below):
 
 ```tsx
 <SunglassesProvider client={client} autoCaptureErrors>
@@ -502,6 +502,42 @@ Enable `autoCaptureErrors` on the provider to capture unhandled errors with `$er
 ```
 
 Combine all three for full coverage: the boundary catches render errors, `autoCaptureErrors` catches global/unhandled errors, and `captureException` handles your own try/catch blocks. Error boundaries inherently do not catch errors in event handlers or async code — use `captureException` there.
+
+### Console capture (opt-in)
+
+Capture `console.error` (and optionally `console.warn`) as `$error` events on both web and React Native. This patches the global `console` (the original method is still called, so logs are unaffected) and tags events with `$error_source: 'console'` and `$error_handled: false`:
+
+```tsx
+// console.error only
+<SunglassesProvider client={client} autoCaptureErrors={{ console: true }}>
+  <App />
+</SunglassesProvider>
+
+// console.error + console.warn, with filtering
+<SunglassesProvider
+  client={client}
+  autoCaptureErrors={{ console: { levels: ['error', 'warn'], ignorePatterns: [/validateDOMNesting/] } }}
+>
+  <App />
+</SunglassesProvider>
+
+// console capture only, without installing the global error handlers
+<SunglassesProvider client={client} autoCaptureErrors={{ console: true, globalHandlers: false }}>
+  <App />
+</SunglassesProvider>
+```
+
+`console.warn` is recorded with `$error_level: 'warning'`. You can also patch the console directly via the core helper:
+
+```ts
+import { patchConsole } from '@drakkar.software/sunglasses-react'; // or -react-native
+const unpatch = patchConsole(client, { levels: ['error', 'warn'] });
+// ... later: unpatch();
+```
+
+Notes:
+- Console capture is **noisy** — React logs render errors, key warnings, and prop-type warnings through `console.error`. Use `ignorePatterns` to filter, and expect overlap with `SunglassesErrorBoundary` (boundary = `$error_handled: true`, console = `$error_handled: false`).
+- The patch always calls the original `console` method first and guards against capture→log→capture recursion (it skips SunGlasses' own `[SunGlasses]`-prefixed logs).
 
 ---
 
