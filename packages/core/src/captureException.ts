@@ -47,6 +47,20 @@ export interface CaptureExceptionOptions {
    * object to capture, or `null` to skip capture entirely.
    */
   beforeCapture?: (props: ErrorEventProperties) => Record<string, unknown> | null;
+  /**
+   * Drop errors with the same fingerprint (name + message + first stack frame)
+   * captured within {@link dedupeWindowMs}. This collapses the common
+   * double-capture cases — e.g. an error boundary plus `console.error` capture
+   * reporting the same render error, or a global handler firing repeatedly for
+   * the same throw. The fingerprint deliberately ignores the `handled` flag and
+   * `$error_source`, so the first capture wins. Default: `true`.
+   */
+  dedupe?: boolean;
+  /**
+   * Time window (ms) used by {@link dedupe}. Identical errors within this window
+   * are dropped. Default: `1000`.
+   */
+  dedupeWindowMs?: number;
 }
 
 interface NormalizedError {
@@ -99,6 +113,39 @@ function extractStack(stack: string | undefined, maxFrames: number): string | un
   return undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Deduplication
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-client store of recently captured error fingerprints to their capture
+ * timestamp. A `WeakMap` keyed by the client lets the entries be garbage
+ * collected automatically when a client is discarded, and keeps state isolated
+ * between clients.
+ */
+const dedupeStore = new WeakMap<object, Map<string, number>>();
+
+/**
+ * Returns `true` when an identical error (same fingerprint) was captured within
+ * the window and should be dropped. Otherwise records the fingerprint and
+ * returns `false`. Expired entries are pruned on each call.
+ */
+function isDuplicate(client: object, fingerprint: string, windowMs: number): boolean {
+  const now = Date.now();
+  let seen = dedupeStore.get(client);
+  if (!seen) {
+    seen = new Map<string, number>();
+    dedupeStore.set(client, seen);
+  }
+  for (const [fp, ts] of seen) {
+    if (now - ts > windowMs) seen.delete(fp);
+  }
+  const last = seen.get(fingerprint);
+  if (last !== undefined && now - last <= windowMs) return true;
+  seen.set(fingerprint, now);
+  return false;
+}
+
 /**
  * Normalize any thrown value into a SunGlasses `$error` event and capture it
  * via `client.capture()`.
@@ -134,12 +181,20 @@ export function captureException(
     ignorePatterns = [],
     properties,
     beforeCapture,
+    dedupe = true,
+    dedupeWindowMs = 1000,
   } = options;
 
   const normalized = normalizeError(error);
   const rawMessage = normalized.message;
 
   if (ignorePatterns.some((p) => p.test(rawMessage))) return;
+
+  if (dedupe) {
+    const firstFrame = extractStack(normalized.stack, 1) ?? '';
+    const fingerprint = `${normalized.name}|${rawMessage}|${firstFrame}`;
+    if (isDuplicate(client, fingerprint, dedupeWindowMs)) return;
+  }
 
   let props: ErrorEventProperties = {
     ...properties,

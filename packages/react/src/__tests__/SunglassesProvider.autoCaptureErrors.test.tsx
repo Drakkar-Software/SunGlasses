@@ -6,6 +6,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
+import { subscribeGlobalError } from '@drakkar.software/sunglasses-core';
 import { SunglassesProvider } from '../SunglassesProvider.js';
 
 function makeClient(): ISunglassesClient {
@@ -81,6 +82,51 @@ describe('SunglassesProvider autoCaptureErrors (web)', () => {
 
     window.dispatchEvent(new ErrorEvent('error', { error: new Error('after unmount') }));
     expect(client.capture).not.toHaveBeenCalled();
+  });
+});
+
+describe('SunglassesProvider autoCaptureErrors granular toggles (web)', () => {
+  it('publishes captured global errors to the bus', () => {
+    const client = makeClient();
+    const listener = vi.fn();
+    const unsub = subscribeGlobalError(listener);
+    const unmount = mount(client, true);
+
+    act(() => {
+      window.dispatchEvent(new ErrorEvent('error', { error: new Error('boom'), message: 'boom' }));
+    });
+
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error', fatal: true }));
+    unsub();
+    unmount();
+  });
+
+  it('does not capture rejections when unhandledRejections is false', () => {
+    const client = makeClient();
+    const unmount = mount(client, { unhandledRejections: false });
+
+    act(() => {
+      const event = new Event('unhandledrejection') as PromiseRejectionEvent;
+      Object.defineProperty(event, 'reason', { value: new Error('rejected') });
+      window.dispatchEvent(event);
+    });
+
+    expect(client.capture).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('still captures uncaught errors when unhandledRejections is false', () => {
+    const client = makeClient();
+    const unmount = mount(client, { unhandledRejections: false });
+
+    act(() => {
+      window.dispatchEvent(new ErrorEvent('error', { error: new Error('still here'), message: 'still here' }));
+    });
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_message: 'still here',
+    }));
+    unmount();
   });
 });
 

@@ -4,7 +4,7 @@ import type {
   ScreenTrackingOptions,
   AutoCaptureErrorsOptions,
 } from '@drakkar.software/sunglasses-core';
-import { captureException, patchConsole } from '@drakkar.software/sunglasses-core';
+import { captureException, patchConsole, publishGlobalError } from '@drakkar.software/sunglasses-core';
 import { SunglassesContext } from './context.js';
 import { useScreenTracking } from './useScreenTracking.js';
 
@@ -19,9 +19,10 @@ export interface SunglassesProviderProps {
    *
    * - `true` installs the global handlers for `window` `'error'` and
    *   `'unhandledrejection'`.
-   * - An options object additionally lets you toggle `globalHandlers` and opt
-   *   into `console` capture (`console.error` / `console.warn`), plus configure
-   *   truncation / stack inclusion / ignore patterns.
+   * - An options object additionally lets you toggle `globalHandlers` and
+   *   `unhandledRejections`, opt into `console` capture (`console.error` /
+   *   `console.warn`), plus configure truncation / stack inclusion / ignore
+   *   patterns.
    *
    * Default: off.
    */
@@ -69,19 +70,25 @@ export function SunglassesProvider({
     const cleanups: Array<() => void> = [];
 
     // Global window error / unhandledrejection handlers.
-    if (options.globalHandlers !== false && typeof window !== 'undefined') {
-      const onError = (event: ErrorEvent): void => {
-        captureException(client, event.error ?? event.message, { handled: false, ...options });
-      };
-      const onRejection = (event: PromiseRejectionEvent): void => {
-        captureException(client, event.reason, { handled: false, ...options });
-      };
-      window.addEventListener('error', onError);
-      window.addEventListener('unhandledrejection', onRejection);
-      cleanups.push(() => {
-        window.removeEventListener('error', onError);
-        window.removeEventListener('unhandledrejection', onRejection);
-      });
+    if (typeof window !== 'undefined') {
+      if (options.globalHandlers !== false) {
+        const onError = (event: ErrorEvent): void => {
+          const error = event.error ?? event.message;
+          captureException(client, error, { handled: false, ...options });
+          publishGlobalError({ error, fatal: true, kind: 'error' });
+        };
+        window.addEventListener('error', onError);
+        cleanups.push(() => window.removeEventListener('error', onError));
+      }
+
+      if (options.unhandledRejections !== false) {
+        const onRejection = (event: PromiseRejectionEvent): void => {
+          captureException(client, event.reason, { handled: false, ...options });
+          publishGlobalError({ error: event.reason, fatal: false, kind: 'rejection' });
+        };
+        window.addEventListener('unhandledrejection', onRejection);
+        cleanups.push(() => window.removeEventListener('unhandledrejection', onRejection));
+      }
     }
 
     // Optional console capture.

@@ -7,6 +7,8 @@ export { useCapture } from './useCapture.js';
 export { useConsentStatus } from './useConsentStatus.js';
 export { SunglassesErrorBoundary } from './SunglassesErrorBoundary.js';
 export type { SunglassesErrorBoundaryProps } from './SunglassesErrorBoundary.js';
+export { SunglassesGlobalErrorBoundary } from './SunglassesGlobalErrorBoundary.js';
+export type { SunglassesGlobalErrorBoundaryProps } from './SunglassesGlobalErrorBoundary.js';
 
 // Re-export core types for convenience
 export type {
@@ -18,5 +20,13 @@ export type {
   CaptureExceptionOptions,
   ConsoleCaptureOptions,
   AutoCaptureErrorsOptions,
+  GlobalErrorInfo,
+  GlobalErrorListener,
 } from '@drakkar.software/sunglasses-core';
-export { SunglassesCore, captureException, patchConsole } from '@drakkar.software/sunglasses-core';
+export {
+  SunglassesCore,
+  captureException,
+  patchConsole,
+  publishGlobalError,
+  subscribeGlobalError,
+} from '@drakkar.software/sunglasses-core';

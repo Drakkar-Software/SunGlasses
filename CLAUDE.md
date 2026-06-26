@@ -55,6 +55,10 @@ pnpm test
 # Lint all packages
 pnpm lint
 
+# Docs site (Docusaurus) — dev server / production build
+pnpm docs:dev
+pnpm docs:build
+
 # Clean all build artifacts
 pnpm clean
 
@@ -76,13 +80,42 @@ pnpm --filter @drakkar.software/sunglasses-core add -D some-dev-package
 5. Add `"@drakkar.software/sunglasses-my-package": "workspace:*"` to consumers that need it
 6. Run `pnpm install` to link the workspace
 
+## Documentation — Always Update
+
+Every change that affects public API, config options, behavior, or user-facing features **must** update both `CHANGELOG.md` and `website/docs/` in the same PR or commit. Do not treat implementation as complete until docs are in sync.
+
+### `CHANGELOG.md`
+
+Add entries under `## [Unreleased]` using [Keep a Changelog](https://keepachangelog.com/) sections (`Added`, `Changed`, `Fixed`, `Removed`). Prefix each bullet with the affected package(s), e.g. `(@drakkar.software/sunglasses-core)`. Match the style of existing entries — full sentences, enough detail for consumers to understand what changed and why.
+
+### `website/docs/`
+
+The Docusaurus site lives in `website/`. Update the page(s) that cover what changed:
+
+| Area | When to update |
+|------|----------------|
+| `getting-started/` | Setup, provider integration, new packages |
+| `guides/` | How-to flows (error capture, screen tracking, consent UI, etc.) |
+| `reference/` | Public API (`client-api.md`, `config.md`, `event-shape.md`, `troubleshooting.md`) |
+| `privacy/`, `core/`, `adapters/`, `storage/`, `advanced/`, `contributing/` | Topic-specific behavior, invariants, or extension points |
+
+When adding exports, types, or config keys, update the relevant reference page and any guide that demonstrates the feature.
+
+### Verification
+
+```bash
+pnpm docs:build   # confirm the site builds before submitting
+```
+
+Purely internal refactors with zero public impact may omit doc updates; when in doubt, update.
+
 ## Making a Release
 
 ```bash
-# 1. Document your changes
+# 1. Confirm CHANGELOG [Unreleased] and website/docs/ are already updated (see above)
 pnpm changeset           # prompts which packages changed and severity (major/minor/patch)
 
-# 2. Apply version bumps and generate CHANGELOG entries
+# 2. Apply version bumps and generate per-package CHANGELOG entries
 pnpm version
 
 # 3. Build and publish to npm

@@ -6,12 +6,17 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import type { ISunglassesClient } from '@drakkar.software/sunglasses-core';
+import { subscribeGlobalError } from '@drakkar.software/sunglasses-core';
 
 vi.mock('react-native', () => ({
   AppState: {
     addEventListener: vi.fn(() => ({ remove: vi.fn() })),
   },
 }));
+
+// Force the global-fallback path for unhandled rejections so tests are
+// deterministic regardless of whether the bundled tracker resolves.
+vi.mock('../rejectionTracking.js', () => ({ rejectionTracking: null }));
 
 import { SunglassesProvider } from '../SunglassesProvider.js';
 
@@ -94,6 +99,50 @@ describe('SunglassesProvider autoCaptureErrors (react-native)', () => {
     unmount();
 
     expect(currentHandler).toBe(previousHandler);
+  });
+});
+
+describe('SunglassesProvider autoCaptureErrors unhandled rejections (react-native)', () => {
+  it('publishes ErrorUtils errors to the global error bus', () => {
+    const client = makeClient();
+    const listener = vi.fn();
+    const unsub = subscribeGlobalError(listener);
+    const unmount = mount(client, true);
+
+    currentHandler?.(new Error('fatal native'), true);
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'error', fatal: true })
+    );
+    unsub();
+    unmount();
+  });
+
+  it('captures unhandled rejections via the global fallback (handled:false)', () => {
+    const client = makeClient();
+    const unmount = mount(client, true);
+
+    const event = new Event('unhandledrejection');
+    Object.defineProperty(event, 'reason', { value: new Error('rn rejection') });
+    globalThis.dispatchEvent(event);
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_message: 'rn rejection',
+      $error_handled: false,
+    }));
+    unmount();
+  });
+
+  it('does not capture rejections when unhandledRejections is false', () => {
+    const client = makeClient();
+    const unmount = mount(client, { unhandledRejections: false });
+
+    const event = new Event('unhandledrejection');
+    Object.defineProperty(event, 'reason', { value: new Error('ignored rejection') });
+    globalThis.dispatchEvent(event);
+
+    expect(client.capture).not.toHaveBeenCalled();
+    unmount();
   });
 });
 

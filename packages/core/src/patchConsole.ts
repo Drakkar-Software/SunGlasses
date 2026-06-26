@@ -35,10 +35,15 @@ export interface ConsoleCaptureOptions {
  */
 export interface AutoCaptureErrorsOptions extends CaptureExceptionOptions {
   /**
-   * Install the platform global error handlers (web `window` `error` /
-   * `unhandledrejection`, React Native `ErrorUtils`). Default: `true`.
+   * Install the platform uncaught-error handlers (web `window` `'error'`,
+   * React Native `ErrorUtils`). Default: `true`.
    */
   globalHandlers?: boolean;
+  /**
+   * Capture unhandled promise rejections (web `window` `'unhandledrejection'`,
+   * React Native engine-specific rejection tracking). Default: `true`.
+   */
+  unhandledRejections?: boolean;
   /**
    * Also capture console output as `$error` events. `true` captures
    * `console.error`; pass {@link ConsoleCaptureOptions} to configure levels.

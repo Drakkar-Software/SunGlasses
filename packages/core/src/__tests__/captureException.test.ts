@@ -134,3 +134,69 @@ describe('captureException', () => {
     expect(client.capture).not.toHaveBeenCalled();
   });
 });
+
+describe('captureException deduplication', () => {
+  it('drops an identical error captured within the window (same error reaching two paths)', () => {
+    const client = makeClient();
+    const err = new Error('dup');
+    captureException(client as unknown as ISunglassesClient, err);
+    captureException(client as unknown as ISunglassesClient, err);
+
+    expect(client.capture).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not collapse the handled flag — first capture wins regardless', () => {
+    const client = makeClient();
+    const err = new Error('dup');
+    captureException(client as unknown as ISunglassesClient, err, { handled: true });
+    captureException(client as unknown as ISunglassesClient, err, { handled: false });
+
+    expect(client.capture).toHaveBeenCalledTimes(1);
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_handled: true,
+    }));
+  });
+
+  it('captures distinct errors', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('a'));
+    captureException(client as unknown as ISunglassesClient, new Error('b'));
+
+    expect(client.capture).toHaveBeenCalledTimes(2);
+  });
+
+  it('captures duplicates when dedupe is disabled', () => {
+    const client = makeClient();
+    const err = new Error('dup');
+    captureException(client as unknown as ISunglassesClient, err, { dedupe: false });
+    captureException(client as unknown as ISunglassesClient, err, { dedupe: false });
+
+    expect(client.capture).toHaveBeenCalledTimes(2);
+  });
+
+  it('isolates dedupe state per client', () => {
+    const a = makeClient();
+    const b = makeClient();
+    const err = new Error('same');
+    captureException(a as unknown as ISunglassesClient, err);
+    captureException(b as unknown as ISunglassesClient, err);
+
+    expect(a.capture).toHaveBeenCalledTimes(1);
+    expect(b.capture).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-captures an identical error after the dedupe window elapses', () => {
+    vi.useFakeTimers();
+    try {
+      const client = makeClient();
+      const err = new Error('windowed');
+      captureException(client as unknown as ISunglassesClient, err, { dedupeWindowMs: 1000 });
+      vi.advanceTimersByTime(1500);
+      captureException(client as unknown as ISunglassesClient, err, { dedupeWindowMs: 1000 });
+
+      expect(client.capture).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

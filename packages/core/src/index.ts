@@ -31,6 +31,10 @@ export type { CaptureExceptionOptions } from './captureException.js';
 export { patchConsole } from './patchConsole.js';
 export type { ConsoleCaptureOptions, ConsoleLevel, AutoCaptureErrorsOptions } from './patchConsole.js';
 
+// Global error bus (providers publish, GlobalErrorBoundary subscribes)
+export { publishGlobalError, subscribeGlobalError } from './errorBus.js';
+export type { GlobalErrorInfo, GlobalErrorListener } from './errorBus.js';
+
 // Module-level singleton helper — safe noop before init()
 export { createLazyClient } from './LazyClient.js';
 

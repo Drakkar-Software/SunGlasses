@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import { AppState } from 'react-native';
 import type { ISunglassesClient, AutoCaptureErrorsOptions } from '@drakkar.software/sunglasses-core';
-import { captureException, patchConsole } from '@drakkar.software/sunglasses-core';
+import { captureException, patchConsole, publishGlobalError } from '@drakkar.software/sunglasses-core';
 import { SunglassesContext } from './context.js';
+import { attachUnhandledRejectionHandler } from './unhandledRejections.js';
 
 /**
  * React Native's global error handler hook. Provided by the RN runtime as a
@@ -25,10 +26,11 @@ export interface SunglassesProviderProps {
    * (`$error_handled: false`).
    *
    * - `true` installs a global `ErrorUtils` handler (the previous handler is
-   *   preserved and still invoked).
-   * - An options object additionally lets you toggle `globalHandlers` and opt
-   *   into `console` capture (`console.error` / `console.warn`), plus configure
-   *   truncation / stack inclusion / ignore patterns.
+   *   preserved and still invoked) and an unhandled promise rejection handler.
+   * - An options object additionally lets you toggle `globalHandlers` and
+   *   `unhandledRejections`, opt into `console` capture (`console.error` /
+   *   `console.warn`), plus configure truncation / stack inclusion / ignore
+   *   patterns.
    *
    * Default: off.
    */
@@ -99,11 +101,17 @@ export function SunglassesProvider({
       const previous = ErrorUtils.getGlobalHandler?.();
       ErrorUtils.setGlobalHandler((error, isFatal) => {
         captureException(client, error, { handled: false, ...options });
+        publishGlobalError({ error, fatal: isFatal !== false, kind: 'error' });
         previous?.(error, isFatal);
       });
       cleanups.push(() => {
         if (previous) ErrorUtils.setGlobalHandler?.(previous);
       });
+    }
+
+    // Unhandled promise rejections (engine-specific tracking).
+    if (options.unhandledRejections !== false) {
+      cleanups.push(attachUnhandledRejectionHandler(client, options));
     }
 
     // Optional console capture.
