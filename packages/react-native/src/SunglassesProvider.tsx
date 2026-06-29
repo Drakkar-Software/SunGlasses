@@ -100,7 +100,12 @@ export function SunglassesProvider({
     ) {
       const previous = ErrorUtils.getGlobalHandler?.();
       ErrorUtils.setGlobalHandler((error, isFatal) => {
-        captureException(client, error, { handled: false, ...options });
+        captureException(client, error, {
+          handled: false,
+          ...options,
+          fatal: isFatal !== false,
+          source: 'global',
+        });
         publishGlobalError({ error, fatal: isFatal !== false, kind: 'error' });
         previous?.(error, isFatal);
       });

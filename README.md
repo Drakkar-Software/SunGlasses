@@ -146,7 +146,7 @@ import { captureException } from '@drakkar.software/sunglasses-core';
 try {
   await riskyOperation();
 } catch (err) {
-  captureException(client, err, { handled: true, includeStack: true });
+  captureException(client, err, { handled: true });   // stack included by default
 }
 ```
 

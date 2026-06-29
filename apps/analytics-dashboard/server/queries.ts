@@ -406,9 +406,17 @@ export async function getErrorTimeseries(filter: FilterParams): Promise<ErrorTim
 // Error detail
 // ---------------------------------------------------------------------------
 
+export interface ErrorSample {
+  stack:            string | null;
+  component_stack:  string | null;
+  cause:            string | null;
+  source:           string | null;
+  fatal:            boolean | null;
+}
+
 export interface ErrorDetailResult {
   timeseries:  { dt: string; occurrences: number }[];
-  stacks:      string[];
+  samples:     ErrorSample[];
   breakdowns:  {
     app_version:     string | null;
     platform:        string | null;
@@ -422,7 +430,7 @@ export async function getErrorDetail(filter: FilterParams): Promise<ErrorDetailR
   const { clause: c2, params: p2 } = buildFilters({ ...filter, event: '$error' });
   const { clause: c3, params: p3 } = buildFilters({ ...filter, event: '$error' });
 
-  const [tsRows, stackRows, breakRows] = await Promise.all([
+  const [tsRows, sampleRows, breakRows] = await Promise.all([
     query(
       `
       SELECT dt, count(*) AS occurrences
@@ -435,10 +443,19 @@ export async function getErrorDetail(filter: FilterParams): Promise<ErrorDetailR
     ),
     query(
       `
-      SELECT DISTINCT json_extract_string(properties, '$.$error_stack') AS stack
+      SELECT DISTINCT
+        json_extract_string(properties, '$.$error_stack')           AS stack,
+        json_extract_string(properties, '$.$error_component_stack') AS component_stack,
+        json_extract_string(properties, '$.$error_cause')           AS cause,
+        json_extract_string(properties, '$.$error_source')          AS source,
+        json_extract_string(properties, '$.$error_fatal')           AS fatal
       FROM events()
       ${c2}
-      AND json_extract_string(properties, '$.$error_stack') IS NOT NULL
+      AND (
+        json_extract_string(properties, '$.$error_stack')          IS NOT NULL
+        OR json_extract_string(properties, '$.$error_component_stack') IS NOT NULL
+        OR json_extract_string(properties, '$.$error_cause')       IS NOT NULL
+      )
       LIMIT 3
       `,
       p2,
@@ -465,9 +482,13 @@ export async function getErrorDetail(filter: FilterParams): Promise<ErrorDetailR
       dt:          String(r['dt'] ?? ''),
       occurrences: Number(r['occurrences'] ?? 0),
     })),
-    stacks: stackRows
-      .map((r) => (r['stack'] != null ? String(r['stack']) : ''))
-      .filter(Boolean),
+    samples: sampleRows.map((r) => ({
+      stack:           r['stack']           != null ? String(r['stack'])           : null,
+      component_stack: r['component_stack'] != null ? String(r['component_stack']) : null,
+      cause:           r['cause']           != null ? String(r['cause'])           : null,
+      source:          r['source']          != null ? String(r['source'])          : null,
+      fatal:           r['fatal'] === 'true' ? true : r['fatal'] === 'false' ? false : null,
+    })),
     breakdowns: breakRows.map((r) => ({
       app_version:      r['app_version'] != null ? String(r['app_version']) : null,
       platform:         r['platform']    != null ? String(r['platform'])    : null,

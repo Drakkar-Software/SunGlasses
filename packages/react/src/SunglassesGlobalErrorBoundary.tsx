@@ -56,10 +56,15 @@ class GlobalErrorBoundaryInner extends React.Component<InnerProps, State> {
     this.unsubscribe?.();
   }
 
-  componentDidCatch(error: Error): void {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     // Render-phase error: capture it ourselves (handled).
     const { client, config } = this.props;
-    captureException(client, error, { handled: true, ...config });
+    captureException(client, error, {
+      handled: true,
+      ...config,
+      componentStack: errorInfo.componentStack ?? undefined,
+      source: 'boundary',
+    });
   }
 
   /**

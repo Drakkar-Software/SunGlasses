@@ -11,11 +11,15 @@ title: PII Sanitization
 
 Built-in sanitization runs before every event is queued:
 
-- Email addresses → `[redacted]`
-- Phone numbers → `[redacted]`
-- IPv4 addresses → `[redacted]`
-- Credit card numbers → `[redacted]`
-- Common key names (`email`, `phone`, `password`, `ssn`, `credit_card`) are removed
+- Email addresses → PII substring replaced with `[redacted]`
+- Phone numbers → PII substring replaced with `[redacted]`
+- IPv4 addresses → PII substring replaced with `[redacted]`
+- Credit card numbers → PII substring replaced with `[redacted]`
+- Common key names (`email`, `phone`, `password`, `ssn`, `credit_card`) are **removed entirely**
+
+:::info Substring masking
+PII is masked at the **matched substring** level, not the whole value. This means error messages and stack traces that contain incidental PII (`"User alice@example.com not found"`) become `"User [redacted] not found"` — the surrounding context is preserved. Bare PII values (`"alice@example.com"`) become `"[redacted]"` as before.
+:::
 
 ## Property allowlist / blocklist
 

@@ -16,14 +16,25 @@ function makeEvent(properties: Record<string, unknown>): SunglassesEvent {
 }
 
 describe('PiiSanitizer', () => {
-  it('strips email values', async () => {
+  // PiiSanitizer now masks matched PII substrings rather than replacing the whole
+  // value. This preserves surrounding context (helpful for stack traces) while
+  // still redacting the sensitive portion.
+
+  it('masks email substrings in place, preserving surrounding text', async () => {
     const sanitizer = new PiiSanitizer();
     const event = makeEvent({ label: 'Contact user@example.com for info' });
+    const result = await sanitizer.process(event, async (e) => e);
+    expect(result?.properties.label).toBe('Contact [redacted] for info');
+  });
+
+  it('replaces a bare email value entirely', async () => {
+    const sanitizer = new PiiSanitizer();
+    const event = makeEvent({ label: 'user@example.com' });
     const result = await sanitizer.process(event, async (e) => e);
     expect(result?.properties.label).toBe('[redacted]');
   });
 
-  it('strips built-in PII key names', async () => {
+  it('strips built-in PII key names (key is removed, not just redacted)', async () => {
     const sanitizer = new PiiSanitizer();
     const event = makeEvent({ email: 'test@example.com', name: 'Alice' });
     const result = await sanitizer.process(event, async (e) => e);
@@ -46,11 +57,13 @@ describe('PiiSanitizer', () => {
     expect(result?.properties.name).toBe('Alice');
   });
 
-  it('strips phone number values', async () => {
+  it('masks phone number substrings in place, preserving surrounding text', async () => {
     const sanitizer = new PiiSanitizer();
+    // The phone regex includes an optional leading space as part of its prefix group,
+    // so the space before the number is consumed by the match.
     const event = makeEvent({ info: 'Call 555-123-4567 for support' });
     const result = await sanitizer.process(event, async (e) => e);
-    expect(result?.properties.info).toBe('[redacted]');
+    expect(result?.properties.info).toBe('Call[redacted] for support');
   });
 
   it('preserves non-PII properties unchanged', async () => {
@@ -60,14 +73,14 @@ describe('PiiSanitizer', () => {
     expect(result?.properties).toEqual({ page: 'home', clicks: 3, active: true });
   });
 
-  it('strips nested PII in objects', async () => {
+  it('masks nested PII substrings in objects', async () => {
     const sanitizer = new PiiSanitizer();
     const event = makeEvent({
       user_data: { contact: 'reach me at nested@example.com', name: 'Alice' },
     });
     const result = await sanitizer.process(event, async (e) => e);
     const userData = result?.properties.user_data as Record<string, unknown>;
-    expect(userData.contact).toBe('[redacted]');
+    expect(userData.contact).toBe('reach me at [redacted]');
     expect(userData.name).toBe('Alice');
   });
 
@@ -80,7 +93,7 @@ describe('PiiSanitizer', () => {
     expect(user.plan).toBe('pro');
   });
 
-  it('strips PII inside arrays', async () => {
+  it('masks PII inside arrays', async () => {
     const sanitizer = new PiiSanitizer();
     const event = makeEvent({ contacts: ['alice@example.com', 'safe-value', 'bob@test.org'] });
     const result = await sanitizer.process(event, async (e) => e);
@@ -93,5 +106,29 @@ describe('PiiSanitizer', () => {
     const event = makeEvent({ page: 'home' });
     await sanitizer.process(event, nextFn);
     expect(nextFn).toHaveBeenCalledOnce();
+  });
+
+  it('masks multiple emails in a single string', async () => {
+    const sanitizer = new PiiSanitizer();
+    const event = makeEvent({ note: 'From: a@a.com, To: b@b.com' });
+    const result = await sanitizer.process(event, async (e) => e);
+    expect(result?.properties.note).toBe('From: [redacted], To: [redacted]');
+  });
+
+  it('preserves a stack trace that contains an IPv4-like version number', async () => {
+    // Before substring masking, "1.2.3.4"-style paths in stacks would nuke the whole value.
+    const sanitizer = new PiiSanitizer();
+    const stack = 'at render (file://some/path/1.0.0/App.js:42:15)';
+    const event = makeEvent({ $error_stack: stack });
+    const result = await sanitizer.process(event, async (e) => e);
+    // 1.0.0 has only 3 octets — not an IPv4 match — so the stack is unchanged.
+    expect(result?.properties.$error_stack).toBe(stack);
+  });
+
+  it('masks an actual IPv4 address embedded in a string', async () => {
+    const sanitizer = new PiiSanitizer();
+    const event = makeEvent({ info: 'Server at 192.168.1.1 responded' });
+    const result = await sanitizer.process(event, async (e) => e);
+    expect(result?.properties.info).toBe('Server at [redacted] responded');
   });
 });

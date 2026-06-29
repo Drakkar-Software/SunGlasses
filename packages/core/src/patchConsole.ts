@@ -112,7 +112,7 @@ export function patchConsole(
     levels = ['error'],
     ignorePatterns = [],
     maxMessageLength = 200,
-    includeStack = false,
+    includeStack = true,
     properties,
   } = options;
 
@@ -146,7 +146,8 @@ export function patchConsole(
           level: LEVEL_TO_SEVERITY[level],
           includeStack,
           maxMessageLength,
-          properties: { ...properties, $error_source: 'console' },
+          source: 'console',
+          properties,
         });
       } finally {
         isCapturing = false;

@@ -35,7 +35,12 @@ export function attachUnhandledRejectionHandler(
   options: CaptureExceptionOptions = {},
 ): () => void {
   const onUnhandled = (error: unknown): void => {
-    captureException(client, error, { handled: false, ...options });
+    captureException(client, error, {
+      handled: false,
+      ...options,
+      source: 'rejection',
+      fatal: false,
+    });
     publishGlobalError({ error, fatal: false, kind: 'rejection' });
   };
 

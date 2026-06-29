@@ -16,16 +16,19 @@ const BUILTIN_DENIED_KEYS = new Set([
   'ip_address',
 ]);
 
-/** Regex patterns to detect PII in string values (tested with early-exit) */
+/**
+ * Regex patterns to mask PII substrings. Global flag is required for
+ * `String.prototype.replace` to replace all occurrences in a single pass.
+ */
 const PII_PATTERNS: RegExp[] = [
   // Email (requires letter-only TLD)
-  /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/,
+  /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
   // Phone (US/international, various formats)
-  /(\+?1?\s?)?\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}/,
+  /(\+?1?\s?)?\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}/g,
   // IPv4
-  /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/,
+  /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g,
   // Credit card (major formats: 16 digits with optional separators)
-  /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/,
+  /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g,
 ];
 
 /**
@@ -106,17 +109,27 @@ export class PiiSanitizer implements IMiddleware {
       return result;
     }
 
-    if (typeof value === 'string' && this.containsPii(value)) {
-      return '[redacted]';
+    if (typeof value === 'string') {
+      return this.maskPiiSubstrings(value);
     }
 
     return value;
   }
 
-  private containsPii(value: string): boolean {
+  /**
+   * Replace every PII match in `value` with `'[redacted]'`, preserving the
+   * surrounding text. This is safer than whole-value redaction for stack traces
+   * and error messages that may contain PII alongside non-sensitive context.
+   *
+   * Each pattern must have the `g` (global) flag so all occurrences are replaced.
+   */
+  private maskPiiSubstrings(value: string): string {
+    let result = value;
     for (const pattern of PII_PATTERNS) {
-      if (pattern.test(value)) return true;
+      // Reset lastIndex before each call — global regexes are stateful.
+      pattern.lastIndex = 0;
+      result = result.replace(pattern, '[redacted]');
     }
-    return false;
+    return result;
   }
 }

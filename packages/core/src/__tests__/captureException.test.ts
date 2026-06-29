@@ -69,17 +69,27 @@ describe('captureException', () => {
     expect(client.capture).not.toHaveBeenCalled();
   });
 
-  it('omits the stack by default', () => {
+  it('includes the stack by default (V8 format)', () => {
     const client = makeClient();
     const err = new Error('with stack');
     err.stack = 'Error: with stack\n    at foo (file.js:1:1)';
     captureException(client as unknown as ISunglassesClient, err);
 
     const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
+    expect(props.$error_stack).toBe('at foo (file.js:1:1)');
+  });
+
+  it('omits the stack when includeStack is false', () => {
+    const client = makeClient();
+    const err = new Error('with stack');
+    err.stack = 'Error: with stack\n    at foo (file.js:1:1)';
+    captureException(client as unknown as ISunglassesClient, err, { includeStack: false });
+
+    const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
     expect(props.$error_stack).toBeUndefined();
   });
 
-  it('includes a truncated stack when includeStack is true (V8 format)', () => {
+  it('respects maxStackFrames when includeStack is true (V8 format)', () => {
     const client = makeClient();
     const err = new Error('with stack');
     err.stack = [
@@ -132,6 +142,178 @@ describe('captureException', () => {
     });
 
     expect(client.capture).not.toHaveBeenCalled();
+  });
+});
+
+describe('captureException — new metadata fields', () => {
+  it('captures $error_component_stack from options', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('render error'), {
+      componentStack: '\n    at Button\n    at App',
+    });
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_component_stack: '\n    at Button\n    at App',
+    }));
+  });
+
+  it('framework componentStack overrides any value in properties', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('e'), {
+      properties: { $error_component_stack: 'from-props' },
+      componentStack: 'from-framework',
+    });
+
+    const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
+    expect(props.$error_component_stack).toBe('from-framework');
+  });
+
+  it('captures $error_fatal from options', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('crash'), {
+      fatal: true,
+    });
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_fatal: true,
+    }));
+  });
+
+  it('captures $error_fatal: false', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('non-fatal'), {
+      fatal: false,
+    });
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_fatal: false,
+    }));
+  });
+
+  it('omits $error_fatal when not provided', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('e'));
+
+    const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
+    expect(props.$error_fatal).toBeUndefined();
+  });
+
+  it('captures $error_source from options', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('e'), {
+      source: 'global',
+    });
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_source: 'global',
+    }));
+  });
+
+  it('framework source overrides any $error_source in properties', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('e'), {
+      properties: { $error_source: 'from-props' },
+      source: 'boundary',
+    });
+
+    const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
+    expect(props.$error_source).toBe('boundary');
+  });
+
+  it('captures $error_cause for a single-level cause', () => {
+    const client = makeClient();
+    const cause = new TypeError('root cause');
+    const error = new Error('outer');
+    (error as Error & { cause: unknown }).cause = cause;
+    captureException(client as unknown as ISunglassesClient, error);
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_cause: 'TypeError: root cause',
+    }));
+  });
+
+  it('captures a multi-level cause chain joined with "caused by:"', () => {
+    const client = makeClient();
+    const root = new RangeError('range issue');
+    const mid = new Error('middle');
+    (mid as Error & { cause: unknown }).cause = root;
+    const outer = new Error('outer');
+    (outer as Error & { cause: unknown }).cause = mid;
+    captureException(client as unknown as ISunglassesClient, outer);
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_cause: 'Error: middle\ncaused by: RangeError: range issue',
+    }));
+  });
+
+  it('handles a string cause', () => {
+    const client = makeClient();
+    const error = new Error('outer');
+    (error as Error & { cause: unknown }).cause = 'string cause';
+    captureException(client as unknown as ISunglassesClient, error);
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_cause: 'string cause',
+    }));
+  });
+
+  it('omits $error_cause when there is no cause', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('no cause'));
+
+    const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
+    expect(props.$error_cause).toBeUndefined();
+  });
+
+  it('omits $error_cause for non-Error throws', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, 'just a string');
+
+    const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
+    expect(props.$error_cause).toBeUndefined();
+  });
+
+  it('captures custom Error properties in $error_extra', () => {
+    const client = makeClient();
+    const err = new Error('api error') as Error & { code: number; statusCode: number };
+    err.code = 42;
+    err.statusCode = 404;
+    captureException(client as unknown as ISunglassesClient, err);
+
+    expect(client.capture).toHaveBeenCalledWith('$error', expect.objectContaining({
+      $error_extra: expect.objectContaining({ code: 42, statusCode: 404 }),
+    }));
+  });
+
+  it('excludes standard Error keys from $error_extra', () => {
+    const client = makeClient();
+    const err = new Error('e') as Error & { custom: string };
+    err.custom = 'yes';
+    captureException(client as unknown as ISunglassesClient, err);
+
+    const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
+    const extra = props.$error_extra as Record<string, unknown> | undefined;
+    expect(extra).toBeDefined();
+    expect(Object.keys(extra!)).not.toContain('message');
+    expect(Object.keys(extra!)).not.toContain('name');
+    expect(Object.keys(extra!)).not.toContain('stack');
+    expect(extra!.custom).toBe('yes');
+  });
+
+  it('omits $error_extra when the Error has no custom props', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, new Error('plain'));
+
+    const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
+    expect(props.$error_extra).toBeUndefined();
+  });
+
+  it('omits $error_extra for non-Error throws', () => {
+    const client = makeClient();
+    captureException(client as unknown as ISunglassesClient, 'just a string');
+
+    const props = client.capture.mock.calls[0][1] as Record<string, unknown>;
+    expect(props.$error_extra).toBeUndefined();
   });
 });
 

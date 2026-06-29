@@ -76,6 +76,9 @@ export function wrapExpoRouterErrorBoundary<P extends ExpoRouterErrorBoundaryPro
       captureException(client, error, {
         handled: true,
         ...options.config,
+        // Expo Router passes only { error, retry } — no errorInfo is available,
+        // so $error_component_stack cannot be captured here.
+        source: 'boundary',
         properties: { ...routeProps, ...options.config?.properties },
       });
     }, [client, error, pathname]);

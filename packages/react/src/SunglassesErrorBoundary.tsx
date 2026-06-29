@@ -31,9 +31,14 @@ class ErrorBoundaryInner extends React.Component<InnerProps, State> {
     return { hasError: true };
   }
 
-  componentDidCatch(error: Error): void {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     const { client, config } = this.props;
-    captureException(client, error, { handled: true, ...config });
+    captureException(client, error, {
+      handled: true,
+      ...config,
+      componentStack: errorInfo.componentStack ?? undefined,
+      source: 'boundary',
+    });
   }
 
   render(): React.ReactNode {

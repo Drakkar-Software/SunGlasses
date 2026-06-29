@@ -18,6 +18,7 @@ import type {
   DateRangeParams,
   ErrorGroupRow,
   ErrorDetailData,
+  ErrorSample,
 } from '../../api';
 import {
   fetchErrorGroups,
@@ -182,6 +183,59 @@ function ErrorGroupItem({
   );
 }
 
+// ── Error sample card ─────────────────────────────────────────────────────────
+
+function ErrorSampleCard({ sample }: { sample: ErrorSample }) {
+  const hasSomething = sample.stack || sample.component_stack || sample.cause;
+  if (!hasSomething) return null;
+
+  return (
+    <div className="rounded-xl border border-border bg-muted/40 overflow-hidden">
+      {/* Meta row */}
+      {(sample.source || sample.fatal != null) && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-border/60 bg-card/60">
+          {sample.source && (
+            <Badge variant="muted">{sample.source}</Badge>
+          )}
+          {sample.fatal === true && (
+            <Badge variant="destructive">fatal</Badge>
+          )}
+        </div>
+      )}
+
+      {/* Stack trace */}
+      {sample.stack && (
+        <div className="p-4">
+          <p className="text-[0.625rem] font-semibold uppercase tracking-wide text-muted-fg mb-1.5">Stack</p>
+          <pre className="text-[0.6875rem] font-mono text-foreground overflow-x-auto whitespace-pre-wrap break-all">
+            {sample.stack}
+          </pre>
+        </div>
+      )}
+
+      {/* Component stack */}
+      {sample.component_stack && (
+        <div className={`p-4 ${sample.stack ? 'border-t border-border/60' : ''}`}>
+          <p className="text-[0.625rem] font-semibold uppercase tracking-wide text-muted-fg mb-1.5">Component stack</p>
+          <pre className="text-[0.6875rem] font-mono text-foreground overflow-x-auto whitespace-pre-wrap break-all">
+            {sample.component_stack}
+          </pre>
+        </div>
+      )}
+
+      {/* Cause chain */}
+      {sample.cause && (
+        <div className={`p-4 ${(sample.stack || sample.component_stack) ? 'border-t border-border/60' : ''}`}>
+          <p className="text-[0.625rem] font-semibold uppercase tracking-wide text-muted-fg mb-1.5">Cause chain</p>
+          <pre className="text-[0.6875rem] font-mono text-foreground overflow-x-auto whitespace-pre-wrap break-all">
+            {sample.cause}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Error detail ──────────────────────────────────────────────────────────────
 
 interface ErrorDetailProps {
@@ -236,6 +290,8 @@ function ErrorDetail({ group, range, onClose }: ErrorDetailProps) {
             {group.level   ? <Badge variant={levelVariant(group.level)}>{group.level}</Badge> : null}
             {group.handled === 'false' ? <Badge variant="destructive">unhandled</Badge> : null}
             {group.handled === 'true'  ? <Badge variant="muted">handled</Badge>         : null}
+            {detail?.samples.some((s) => s.fatal === true)  ? <Badge variant="destructive">fatal</Badge>  : null}
+            {detail?.samples.some((s) => s.source != null)  ? <Badge variant="muted">{detail!.samples.find((s) => s.source != null)!.source!}</Badge> : null}
           </div>
           <p className="text-xs text-muted-fg mt-1 break-words">{group.message ?? '—'}</p>
           <p className="text-xs text-muted-fg mt-1">
@@ -268,28 +324,19 @@ function ErrorDetail({ group, range, onClose }: ErrorDetailProps) {
           )}
         </div>
 
-        {/* Stack traces */}
+        {/* Error samples (stack + component stack + cause) */}
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-fg mb-3">Stack traces</p>
-          {(detail?.stacks.length ?? 0) === 0 ? (
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-fg mb-3">Error samples</p>
+          {(detail?.samples.length ?? 0) === 0 ? (
             <div className="rounded-xl border border-border bg-muted/40 p-4 text-xs text-muted-fg">
-              No stack traces captured. Enable <code className="font-mono">captureStack: true</code> in your SunGlasses error middleware to capture stacks.
+              No stack traces captured. Enable <code className="font-mono">autoCaptureErrors</code> on your
+              {' '}<code className="font-mono">&lt;SunglassesProvider&gt;</code> to capture error details automatically.
             </div>
           ) : (
-            <div className="space-y-3">
-              {detail!.stacks.slice(0, 3).map((stack, i) => (
-                <pre
-                  key={i}
-                  className="rounded-xl border border-border bg-muted/40 p-4 text-[0.6875rem] font-mono text-foreground overflow-x-auto whitespace-pre-wrap break-all"
-                >
-                  {stack}
-                </pre>
+            <div className="space-y-4">
+              {detail!.samples.map((sample, i) => (
+                <ErrorSampleCard key={i} sample={sample} />
               ))}
-              {(detail?.stacks.length ?? 0) > 3 ? (
-                <p className="text-xs text-muted-fg">
-                  …and {detail!.stacks.length - 3} more sample{detail!.stacks.length - 3 !== 1 ? 's' : ''}
-                </p>
-              ) : null}
             </div>
           )}
         </div>

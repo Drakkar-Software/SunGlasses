@@ -74,7 +74,16 @@ export function SunglassesProvider({
       if (options.globalHandlers !== false) {
         const onError = (event: ErrorEvent): void => {
           const error = event.error ?? event.message;
-          captureException(client, error, { handled: false, ...options });
+          const locationProps: Record<string, unknown> = {};
+          if (event.filename) locationProps.$error_filename = event.filename;
+          if (event.lineno) locationProps.$error_line = event.lineno;
+          if (event.colno) locationProps.$error_column = event.colno;
+          captureException(client, error, {
+            handled: false,
+            ...options,
+            source: 'global',
+            properties: { ...locationProps, ...options.properties },
+          });
           publishGlobalError({ error, fatal: true, kind: 'error' });
         };
         window.addEventListener('error', onError);
@@ -83,7 +92,11 @@ export function SunglassesProvider({
 
       if (options.unhandledRejections !== false) {
         const onRejection = (event: PromiseRejectionEvent): void => {
-          captureException(client, event.reason, { handled: false, ...options });
+          captureException(client, event.reason, {
+            handled: false,
+            ...options,
+            source: 'rejection',
+          });
           publishGlobalError({ error: event.reason, fatal: false, kind: 'rejection' });
         };
         window.addEventListener('unhandledrejection', onRejection);

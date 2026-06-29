@@ -66,3 +66,25 @@ When using the [ingest server](/backend/ingest-server), events are flattened to:
 | `$session_start` | New session (if enabled) |
 | `$error` | Error capture |
 | `$identify` | Internal identify representation |
+
+## `$error` event properties
+
+`$error` events are built by `captureException` and always carry:
+
+| Property | Type | Notes |
+|---|---|---|
+| `$error_message` | `string` | Error message (truncated to `maxMessageLength`, default 200) |
+| `$error_type` | `string` | `error.name` — e.g. `"TypeError"` |
+| `$error_handled` | `boolean` | `true` = caught boundary / try-catch; `false` = unhandled global |
+| `$error_level` | `string` | Sentry-compatible severity — usually `"error"` |
+| `$error_stack?` | `string` | Parsed stack frames (on by default, capped to `maxStackFrames`) |
+| `$error_component_stack?` | `string` | React `errorInfo.componentStack` — set by error boundaries |
+| `$error_cause?` | `string` | `error.cause` chain — `"Name: msg\ncaused by: …"`, depth-capped at 3 |
+| `$error_extra?` | `object` | Custom enumerable Error props (`code`, `statusCode`, …) — scalar values only |
+| `$error_fatal?` | `boolean` | React Native `ErrorUtils` `isFatal` — absent on web |
+| `$error_source?` | `string` | Origin: `"boundary"`, `"global"`, `"rejection"`, or `"console"` |
+| `$error_filename?` | `string` | Web `ErrorEvent.filename` — source file URL |
+| `$error_line?` | `number` | Web `ErrorEvent.lineno` |
+| `$error_column?` | `number` | Web `ErrorEvent.colno` |
+
+All properties pass through `PiiSanitizer` before being queued.

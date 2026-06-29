@@ -170,9 +170,17 @@ export interface ErrorTimeseriesRow {
   occurrences:number;
 }
 
+export interface ErrorSample {
+  stack:            string | null;
+  component_stack:  string | null;
+  cause:            string | null;
+  source:           string | null;
+  fatal:            boolean | null;
+}
+
 export interface ErrorDetailData {
   timeseries:  { dt: string; occurrences: number }[];
-  stacks:      string[];
+  samples:     ErrorSample[];
   breakdowns:  {
     app_version:      string | null;
     platform:         string | null;

@@ -656,8 +656,42 @@ export interface ErrorEventProperties {
   $error_handled: boolean;
   /** Sentry-compatible severity level. Usually `'error'`. */
   $error_level: string;
-  /** Optional stringified stack trace. Disabled by default for privacy. */
+  /** Stringified stack trace (trimmed to `maxStackFrames`). On by default. */
   $error_stack?: string;
+  /**
+   * React component stack from `errorInfo.componentStack` (boundaries only).
+   * Populated when the error is caught by a `SunglassesErrorBoundary` or
+   * `SunglassesGlobalErrorBoundary`.
+   */
+  $error_component_stack?: string;
+  /**
+   * Serialized `error.cause` chain — each link formatted as `"Name: message"`,
+   * joined by `"\ncaused by: "`, depth-capped at 3 levels.
+   */
+  $error_cause?: string;
+  /**
+   * Custom enumerable properties on the Error object beyond the standard
+   * `message / name / stack / cause` keys (e.g. `code`, `statusCode`).
+   * Scalar values only (string/number/boolean); nested objects are skipped.
+   */
+  $error_extra?: Record<string, unknown>;
+  /**
+   * Whether the error was fatal (React Native `ErrorUtils` `isFatal` only).
+   * Absent on web.
+   */
+  $error_fatal?: boolean;
+  /**
+   * Where the error was captured: `'boundary'` (error boundary / component
+   * `componentDidCatch`), `'global'` (platform global handler), `'rejection'`
+   * (unhandled promise), or `'console'` (console patching).
+   */
+  $error_source?: string;
+  /** Source filename for web `window 'error'` events (`ErrorEvent.filename`). */
+  $error_filename?: string;
+  /** Source line number for web `window 'error'` events (`ErrorEvent.lineno`). */
+  $error_line?: number;
+  /** Source column number for web `window 'error'` events (`ErrorEvent.colno`). */
+  $error_column?: number;
   /** Allows adapter-specific extension properties (e.g. from `beforeCapture`). */
   [key: string]: unknown;
 }

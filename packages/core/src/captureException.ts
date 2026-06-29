@@ -17,8 +17,9 @@ export interface CaptureExceptionOptions {
   /** Sentry-compatible severity level. Default: `'error'`. */
   level?: string;
   /**
-   * Include the stack trace in `$error_stack`. Default: `false` (privacy-safe).
-   * Stack traces may expose internal file paths and function names.
+   * Include the stack trace in `$error_stack`. Default: `true`.
+   * Stack traces may expose internal file paths and function names; set to
+   * `false` to disable if your privacy policy requires it.
    */
   includeStack?: boolean;
   /**
@@ -61,6 +62,23 @@ export interface CaptureExceptionOptions {
    * are dropped. Default: `1000`.
    */
   dedupeWindowMs?: number;
+  /**
+   * React component stack from `errorInfo.componentStack`, set by error
+   * boundaries. Emitted as `$error_component_stack`. Framework-set — takes
+   * precedence over any value in `properties`.
+   */
+  componentStack?: string;
+  /**
+   * Whether the error was fatal (React Native `ErrorUtils` `isFatal`).
+   * Emitted as `$error_fatal`. Framework-set — takes precedence over `properties`.
+   */
+  fatal?: boolean;
+  /**
+   * Origin of the capture: `'boundary'`, `'global'`, `'rejection'`, or
+   * `'console'`. Emitted as `$error_source`. Framework-set — takes precedence
+   * over any value in `properties`.
+   */
+  source?: string;
 }
 
 interface NormalizedError {
@@ -111,6 +129,76 @@ function extractStack(stack: string | undefined, maxFrames: number): string | un
     return rnFrames.slice(0, maxFrames).join('\n');
   }
   return undefined;
+}
+
+/**
+ * Standard Error property keys excluded from `$error_extra` serialization.
+ */
+const STANDARD_ERROR_KEYS = new Set(['message', 'name', 'stack', 'cause']);
+
+/**
+ * Maximum number of custom Error properties collected into `$error_extra`.
+ */
+const MAX_EXTRA_PROPS = 20;
+
+/**
+ * Collect custom enumerable properties off an `Error` instance into a plain
+ * object. Only scalar values (string / number / boolean) are included to avoid
+ * circular-reference issues and keep the payload small. Returns `undefined`
+ * when the error has no relevant custom props.
+ */
+function extractErrorExtras(
+  error: Error,
+  maxMessageLength: number,
+): Record<string, unknown> | undefined {
+  const extras: Record<string, unknown> = {};
+  let count = 0;
+  for (const key of Object.getOwnPropertyNames(error)) {
+    if (STANDARD_ERROR_KEYS.has(key)) continue;
+    if (count >= MAX_EXTRA_PROPS) break;
+    const val = (error as unknown as Record<string, unknown>)[key];
+    const t = typeof val;
+    if (t === 'string') {
+      extras[key] = (val as string).slice(0, maxMessageLength);
+      count++;
+    } else if (t === 'number' || t === 'boolean') {
+      extras[key] = val;
+      count++;
+    }
+    // Skip functions, objects, symbols — avoids circular references and noise.
+  }
+  return count > 0 ? extras : undefined;
+}
+
+/**
+ * Walk `error.cause` up to `maxDepth` levels and serialize each link as
+ * `"Name: message"`, joined by `"\ncaused by: "`. Returns `undefined` when
+ * there is no cause chain.
+ */
+function serializeCauseChain(
+  error: unknown,
+  maxDepth: number,
+  maxMessageLength: number,
+): string | undefined {
+  if (!(error instanceof Error) || !('cause' in error)) return undefined;
+  const parts: string[] = [];
+  let current: unknown = (error as { cause: unknown }).cause;
+  for (let depth = 0; depth < maxDepth && current != null; depth++) {
+    if (current instanceof Error) {
+      parts.push(`${current.name}: ${current.message.slice(0, maxMessageLength)}`);
+      current = 'cause' in current ? (current as { cause: unknown }).cause : undefined;
+    } else if (typeof current === 'string') {
+      parts.push(current.slice(0, maxMessageLength));
+      break;
+    } else if (current && typeof current === 'object' && 'message' in current) {
+      parts.push(String((current as { message: unknown }).message).slice(0, maxMessageLength));
+      break;
+    } else {
+      parts.push(String(current).slice(0, maxMessageLength));
+      break;
+    }
+  }
+  return parts.length > 0 ? parts.join('\ncaused by: ') : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +263,7 @@ export function captureException(
   const {
     handled = true,
     level = 'error',
-    includeStack = false,
+    includeStack = true,
     maxStackFrames = 5,
     maxMessageLength = 200,
     ignorePatterns = [],
@@ -183,6 +271,9 @@ export function captureException(
     beforeCapture,
     dedupe = true,
     dedupeWindowMs = 1000,
+    componentStack,
+    fatal,
+    source,
   } = options;
 
   const normalized = normalizeError(error);
@@ -208,6 +299,22 @@ export function captureException(
     const frames = extractStack(normalized.stack, maxStackFrames);
     if (frames) props = { ...props, $error_stack: frames };
   }
+
+  // Cause chain — walk error.cause up to 3 levels.
+  const cause = serializeCauseChain(error, 3, maxMessageLength);
+  if (cause) props = { ...props, $error_cause: cause };
+
+  // Custom enumerable Error props (code, statusCode, etc.).
+  if (error instanceof Error) {
+    const extra = extractErrorExtras(error, maxMessageLength);
+    if (extra) props = { ...props, $error_extra: extra };
+  }
+
+  // Framework-set fields — always applied last so they cannot be clobbered
+  // by user-provided `properties`.
+  if (componentStack) props = { ...props, $error_component_stack: componentStack };
+  if (fatal !== undefined) props = { ...props, $error_fatal: fatal };
+  if (source) props = { ...props, $error_source: source };
 
   if (beforeCapture) {
     const transformed = beforeCapture(props);
