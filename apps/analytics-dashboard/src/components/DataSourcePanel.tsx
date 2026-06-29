@@ -125,11 +125,15 @@ export function DataSourcePanel({ status, onConnected }: Props) {
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'starfish' ? (
               <>
-                <Field label="Sync base URL" required>
+                <Field
+                  label="Sync base URL"
+                  required
+                  hint="Full external API root including the /sync/v1/<namespace> prefix, e.g. https://host/sync/v1/analytics — not just the host."
+                >
                   <input
                     type="url" required value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder="https://sync.example.com/v1/analytics"
+                    placeholder="https://sync.example.com/sync/v1/analytics"
                     autoComplete="off"
                     className={inputCls}
                   />
@@ -261,13 +265,14 @@ export function DataSourcePanel({ status, onConnected }: Props) {
 const inputCls =
   'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-fg/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary';
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-foreground">
         {label}{required ? <span className="text-destructive ml-0.5" aria-hidden="true">*</span> : null}
       </span>
       {children}
+      {hint ? <span className="text-xs text-muted-fg">{hint}</span> : null}
     </label>
   );
 }

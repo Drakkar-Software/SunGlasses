@@ -71,6 +71,8 @@ Add the dashboard origin to your Starfish server's `cors.allowedOrigins` config 
 
 Click **Refresh data** to pull new batches. The sync is incremental: already-downloaded batches are skipped (tracked in `localStorage`).
 
+**Base URL format:** enter the full external API root including the `/sync/v1/<namespace>` prefix, e.g. `https://sync.example.com/sync/v1/analytics`. The dashboard then appends `/list/events/<app>` and `/pull/events/<app>/<id>` automatically. Entering the bare host without the namespace prefix will hit nginx's 404 catch-all and surface in the browser as a misleading CORS error. For the `events` collection when `read_roles: ["public"]`, enable **Public read** in the form (no cap-cert required).
+
 ### Direct S3
 
 DuckDB-WASM loads the `httpfs` extension and reads Parquet directly from `s3://<bucket>/<prefix>/**/*.parquet`. Provide explicit access keys (IAM / credential-chain is not available in the browser).
