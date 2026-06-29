@@ -36,6 +36,12 @@ let _ready:          boolean                            = false;
 let _lastError:      string | null                      = null;
 let _starfishBusy:   boolean                            = false;
 
+// Tracks which virtual-FS names are currently registered with DuckDB so we never try to
+// transfer an already-detached ArrayBuffer on a second registerFileBuffer() call.
+// registerFileBuffer() transfers the underlying ArrayBuffer to the worker, detaching it;
+// subsequent calls with the same (now-detached) buffer would throw "already detached".
+const _registeredFiles = new Set<string>();
+
 // ── WASM init (lazy) ──────────────────────────────────────────────────────────
 
 async function ensureDb(): Promise<duckdb.AsyncDuckDB> {
@@ -129,13 +135,15 @@ async function setupStarfishCache(
   const db  = await ensureDb();
   _conn     = await db.connect();
 
-  // Evict any previously registered Parquet files (handles removed apps and re-registration).
-  await db.dropFiles();
-
-  // Register all in-memory Parquet buffers
+  // Register only buffers not yet in DuckDB's virtual FS for this session.
+  // registerFileBuffer() transfers (detaches) the ArrayBuffer — calling it twice on the
+  // same buffer would throw "already detached". New files are tracked in _registeredFiles.
   const buffers = getRegisteredBuffers();
   for (const { name, data } of buffers) {
-    await db.registerFileBuffer(name, data);
+    if (!_registeredFiles.has(name)) {
+      await db.registerFileBuffer(name, data);
+      _registeredFiles.add(name);
+    }
   }
 
   const files = getRegisteredFiles();
@@ -253,13 +261,19 @@ export async function removeStarfishApp(app: string): Promise<SyncStats> {
   if (_starfishBusy) throw new Error('Another app operation is in progress');
   _starfishBusy = true;
   try {
+    // Drop this app's files from DuckDB's virtual FS per-name before evicting from registry.
+    const db          = await ensureDb();
+    const filesToDrop = [..._registeredFiles].filter((n) => n.startsWith(`${app}/`));
+    for (const name of filesToDrop) {
+      await db.dropFile(name);
+      _registeredFiles.delete(name);
+    }
     clearRegistryApp(app);
     clearManifest(app);
     await idbClearApp(app);
     const next = { ..._starfishConf, apps: _starfishConf.apps.filter((a) => a !== app) };
     _starfishConf = next;
     const stats = computeSyncStats(next.apps);
-    // dropFiles() inside setupStarfishCache evicts the removed app's Parquet from DuckDB's virtual FS.
     await setupStarfishCache(next, stats);
     await testConnection();
     _syncStats = stats;
@@ -277,6 +291,10 @@ export async function testConnection(): Promise<void> {
 /** Clear the DuckDB connection and all in-memory + persistent state. */
 export async function resetDb(): Promise<void> {
   await resetConnection();
+  // Drop all registered Parquet files from DuckDB's virtual FS so a reconnect starts clean.
+  // This is safe here because _registry will be repopulated from IDB with fresh buffers.
+  if (_db) await _db.dropFiles().catch(() => undefined);
+  _registeredFiles.clear();
   clearRegistry();
   clearAllManifests();
   await idbClearAll();
