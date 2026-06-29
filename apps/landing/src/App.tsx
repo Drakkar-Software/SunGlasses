@@ -3,6 +3,7 @@ import { Hero } from './components/Hero';
 import { Features } from './components/Features';
 import { Pipeline } from './components/Pipeline';
 import { Compare } from './components/Compare';
+import { DashboardShowcase } from './components/DashboardShowcase';
 import { Quickstart } from './components/Quickstart';
 import { Packages } from './components/Packages';
 import { SelfHost } from './components/SelfHost';
@@ -26,6 +27,7 @@ export function App() {
         <Features />
         <Pipeline />
         <Compare />
+        <DashboardShowcase />
         <Quickstart />
         <Packages />
         <SelfHost />
