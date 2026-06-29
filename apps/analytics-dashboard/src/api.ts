@@ -1,63 +1,108 @@
-// ── Date range ───────────────────────────────────────────────────────────────
+/**
+ * Public API layer — same exported signatures as before.
+ * Bodies now call engine/* directly (no /api/* HTTP calls).
+ */
+import {
+  configureDirectS3,
+  configureStarfish,
+  resyncStarfish,
+  resetDb,
+  isDbReady,
+  getDataSource,
+  getS3Config,
+  getStarfishConfig,
+  getSyncStats,
+  queryRaw,
+} from './engine/duckdb.js';
+import type { DataSourceKind, ConfigStatus, SyncStats } from './engine/config.js';
+import {
+  parseS3Input,
+  parseStarfishInput,
+  statusForS3,
+  statusForStarfish,
+} from './engine/config.js';
+import {
+  getApps,
+  getOverview,
+  getTimeseries,
+  getTopEvents,
+  getTopScreens,
+  getTopErrors,
+  getErrorGroups,
+  getErrorTimeseries,
+  getErrorDetail,
+  getDau,
+  getRetention,
+} from './engine/queries.js';
+import { isReadOnlySql } from './engine/sql-guard.js';
+
+// ── Re-exported types (components import these from api.ts) ───────────────────
+
+export type { DataSourceKind, ConfigStatus, SyncStats };
+export type {
+  AppRow       as AppInfo,
+  OverviewResult as OverviewData,
+  TimeseriesRow,
+  TopEventRow,
+  TopScreenRow,
+  TopErrorRow,
+  ErrorGroupRow,
+  ErrorTimeseriesRow,
+  ErrorSample,
+  ErrorDetailResult as ErrorDetailData,
+  DauRow,
+  RetentionRow,
+} from './engine/queries.js';
+
+// ── Config types ──────────────────────────────────────────────────────────────
 
 export interface DateRangeParams {
-  from?: string;
-  to?: string;
+  from?:  string;
+  to?:    string;
   limit?: number;
-  /** Filter events to a specific app (context.app.name). Undefined = all apps. */
-  app?: string;
-}
-
-// ── Config types ─────────────────────────────────────────────────────────────
-
-export type DataSourceKind = 'direct_s3' | 'starfish' | null;
-
-export interface SyncStats {
-  totalFiles: number;
-  cacheBytes: number;
-  lastSyncAt: string | null;
+  /** Filter events to a specific context.app.name. Undefined = all apps. */
+  app?:   string;
 }
 
 export interface S3ConfigInput {
-  source?: 'direct_s3';
-  s3Bucket?: string;
-  s3Prefix?: string;
-  awsRegion?: string;
-  accessKeyId?: string;
+  source?:          'direct_s3';
+  s3Bucket?:        string;
+  s3Prefix?:        string;
+  awsRegion?:       string;
+  accessKeyId?:     string;
   secretAccessKey?: string;
-  endpointUrl?: string;
-  useIam?: boolean;
+  endpointUrl?:     string;
 }
 
 export interface StarfishConfigInput {
-  source?: 'starfish';
-  baseUrl?: string;
-  app?: string;
-  publicRead?: boolean;
-  cap?: string;
+  source?:       'starfish';
+  baseUrl?:      string;
+  app?:          string;
+  publicRead?:   boolean;
+  cap?:          string;
   devEdPrivHex?: string;
-  cacheDir?: string;
 }
 
 export type ConfigInput = S3ConfigInput | StarfishConfigInput;
 
+// ── Browser config (sessionStorage) ──────────────────────────────────────────
+
 const BROWSER_CONFIG_KEY = 'sunglasses-dashboard-browser-config';
 
 export interface BrowserConfig {
-  mode?: 'direct_s3' | 'starfish';
-  remember?: boolean;
-  s3Bucket?: string;
-  s3Prefix?: string;
-  awsRegion?: string;
-  accessKeyId?: string;
+  mode?:            'direct_s3' | 'starfish';
+  remember?:        boolean;
+  s3Bucket?:        string;
+  s3Prefix?:        string;
+  awsRegion?:       string;
+  accessKeyId?:     string;
   secretAccessKey?: string;
-  endpointUrl?: string;
-  useIam?: boolean;
-  baseUrl?: string;
-  app?: string;
-  publicRead?: boolean;
-  capJson?: string;
-  devEdPrivHex?: string;
+  endpointUrl?:     string;
+  baseUrl?:         string;
+  app?:             string;
+  publicRead?:      boolean;
+  capJson?:         string;
+  devEdPrivHex?:    string;
 }
 
 export function loadBrowserConfig(): BrowserConfig | null {
@@ -87,257 +132,16 @@ export function canAutoConnectFromBrowser(): boolean {
     return Boolean(c.baseUrl && c.app && c.capJson && c.devEdPrivHex);
   }
   if (!c.s3Bucket) return false;
-  if (c.useIam) return true;
   return Boolean(c.accessKeyId && c.secretAccessKey);
 }
 
-export interface ConfigStatus {
-  ready: boolean;
-  dataSource: DataSourceKind;
-  source: string | null;
-  bucket: string | null;
-  prefix: string;
-  region: string;
-  endpointUrl: string | null;
-  authMode: 'keys' | 'iam' | 'none';
-  baseUrl: string | null;
-  app: string | null;
-  cacheDir: string | null;
-  starfishPublicRead: boolean;
-  sync: SyncStats | null;
-  error: string | null;
-}
-
-// ── Row types ─────────────────────────────────────────────────────────────────
-
-export interface AppInfo {
-  app: string | null;
-  events: number;
-  last_seen: string | null;
-}
-
-export interface OverviewData {
-  total_events:           number;
-  unique_devices:         number;
-  distinct_events:        number;
-  latest_dt:              string | null;
-  latest_dau:             number;
-  total_errors:           number;
-  error_affected_devices: number;
-}
-
-export interface TimeseriesRow {
-  dt: string;
-  events: number;
-  unique_devices: number;
-}
-
-export interface TopEventRow {
-  event: string;
-  event_type: string;
-  total: number;
-  unique_devices: number;
-}
-
-export interface TopScreenRow {
-  screen_name: string | null;
-  views: number;
-  unique_devices: number;
-}
-
-export interface TopErrorRow {
-  error_type: string | null;
-  level: string | null;
-  occurrences: number;
-  affected_devices: number;
-}
-
-export interface ErrorGroupRow {
-  error_type:       string | null;
-  message:          string | null;
-  level:            string | null;
-  handled:          string | null;
-  occurrences:      number;
-  affected_devices: number;
-  first_seen:       string | null;
-  last_seen:        string | null;
-}
-
-export interface ErrorTimeseriesRow {
-  error_type: string | null;
-  message:    string | null;
-  dt:         string;
-  occurrences:number;
-}
-
-export interface ErrorSample {
-  stack:            string | null;
-  component_stack:  string | null;
-  cause:            string | null;
-  source:           string | null;
-  fatal:            boolean | null;
-}
-
-export interface ErrorDetailData {
-  timeseries:  { dt: string; occurrences: number }[];
-  samples:     ErrorSample[];
-  breakdowns:  {
-    app_version:      string | null;
-    platform:         string | null;
-    occurrences:      number;
-    affected_devices: number;
-  }[];
-}
-
-export interface DauRow {
-  dt: string;
-  dau: number;
-}
-
-export interface RetentionRow {
-  cohort_date:   string;
-  cohort_size:   number;
-  retained:      number;
-  retention_pct: number;
-}
-
-export interface QueryResult {
-  columns: string[];
-  rows: Record<string, unknown>[];
-}
-
-// ── HTTP helpers ──────────────────────────────────────────────────────────────
-
-interface ApiResponse<T> {
-  ok: boolean;
-  data?: T;
-  error?: string;
-}
-
-function qs(params: Record<string, string | number | boolean | undefined>): string {
-  const parts: string[] = [];
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== '') parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
-  }
-  return parts.length > 0 ? `?${parts.join('&')}` : '';
-}
-
-async function get<T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> {
-  const res  = await fetch(`/api${path}${qs(params)}`);
-  const body = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || !body.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
-  return body.data as T;
-}
-
-function toParams(
-  range: DateRangeParams & {
-    day?: number;
-    level?: string;
-    handled?: boolean;
-    error_type?: string;
-    error_message?: string;
-  },
-): Record<string, string | number | boolean | undefined> {
-  return {
-    from:          range.from,
-    to:            range.to,
-    limit:         range.limit,
-    app:           range.app,
-    day:           range.day,
-    level:         range.level,
-    handled:       range.handled,
-    error_type:    range.error_type,
-    error_message: range.error_message,
-  };
-}
-
-// ── Fetch functions ───────────────────────────────────────────────────────────
-
-export function fetchApps(range: DateRangeParams) {
-  return get<AppInfo[]>('/apps', toParams(range));
-}
-
-export function fetchOverview(range: DateRangeParams) {
-  return get<OverviewData>('/overview', toParams(range));
-}
-
-export function fetchTimeseries(range: DateRangeParams) {
-  return get<TimeseriesRow[]>('/timeseries', toParams(range));
-}
-
-export function fetchTopEvents(range: DateRangeParams) {
-  return get<TopEventRow[]>('/events/top', { ...toParams(range), limit: range.limit ?? 20 });
-}
-
-export function fetchTopScreens(range: DateRangeParams) {
-  return get<TopScreenRow[]>('/screens/top', { ...toParams(range), limit: range.limit ?? 20 });
-}
-
-/** @deprecated Use fetchErrorGroups for the errors section */
-export function fetchTopErrors(range: DateRangeParams) {
-  return get<TopErrorRow[]>('/errors/top', { ...toParams(range), limit: range.limit ?? 20 });
-}
-
-export function fetchErrorGroups(
-  range: DateRangeParams & { level?: string; handled?: boolean },
-) {
-  return get<ErrorGroupRow[]>('/errors', toParams(range));
-}
-
-export function fetchErrorTimeseries(range: DateRangeParams) {
-  return get<ErrorTimeseriesRow[]>('/errors/timeseries', toParams(range));
-}
-
-export function fetchErrorDetail(
-  range: DateRangeParams & { error_type?: string; error_message?: string },
-) {
-  return get<ErrorDetailData>('/errors/detail', toParams(range));
-}
-
-export function fetchDau(range: DateRangeParams) {
-  return get<DauRow[]>('/dau', { ...toParams(range), limit: range.limit ?? 30 });
-}
-
-export function fetchRetention(range: DateRangeParams & { day?: number }) {
-  return get<RetentionRow[]>('/retention', { ...toParams(range), limit: range.limit ?? 30 });
-}
-
-export async function runQuery(sql: string): Promise<QueryResult> {
-  const res  = await fetch('/api/query', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sql }),
-  });
-  const body = await res.json();
-  if (!res.ok || !body.ok) throw new Error(body.error ?? `Query failed (${res.status})`);
-  return { columns: body.columns as string[], rows: body.rows as Record<string, unknown>[] };
-}
-
-// ── Config helpers ────────────────────────────────────────────────────────────
-
-function parseConfigStatus(body: Record<string, unknown>): ConfigStatus {
-  return {
-    ready:              Boolean(body.ready),
-    dataSource:         (body.dataSource as DataSourceKind) ?? null,
-    source:             (body.source as string | null) ?? null,
-    bucket:             (body.bucket as string | null) ?? null,
-    prefix:             (body.prefix as string) ?? 'events',
-    region:             (body.region as string) ?? 'us-east-1',
-    endpointUrl:        (body.endpointUrl as string | null) ?? null,
-    authMode:           (body.authMode as ConfigStatus['authMode']) ?? 'none',
-    baseUrl:            (body.baseUrl as string | null) ?? null,
-    app:                (body.app as string | null) ?? null,
-    cacheDir:           (body.cacheDir as string | null) ?? null,
-    starfishPublicRead: Boolean(body.starfishPublicRead),
-    sync:               (body.sync as SyncStats | null) ?? null,
-    error:              (body.error as string | null) ?? null,
-  };
-}
+// ── DEFAULT_CONFIG_STATUS ─────────────────────────────────────────────────────
 
 const DEFAULT_CONFIG_STATUS: ConfigStatus = {
   ready:              false,
   dataSource:         null,
   source:             null,
+  error:              null,
   bucket:             null,
   prefix:             'events',
   region:             'us-east-1',
@@ -348,48 +152,162 @@ const DEFAULT_CONFIG_STATUS: ConfigStatus = {
   cacheDir:           null,
   starfishPublicRead: false,
   sync:               null,
-  error:              null,
 };
 
+// ── Config operations ─────────────────────────────────────────────────────────
+
+/** Return the current engine status (no network call). */
 export async function fetchConfigStatus(): Promise<ConfigStatus> {
-  const res = await fetch('/api/config/status');
-  if (!res.headers.get('content-type')?.includes('application/json')) return DEFAULT_CONFIG_STATUS;
-  const body = await res.json();
-  if (!res.ok || !body.ok) throw new Error(body.error ?? `Config status failed (${res.status})`);
-  return parseConfigStatus(body);
-}
-
-function assertJson(res: Response): void {
-  const ct = res.headers.get('content-type') ?? '';
-  if (!ct.includes('application/json')) {
-    throw new Error(
-      'No local API server detected. Run the dashboard locally with `pnpm start` (or `pnpm dev`) to connect to your data.',
-    );
+  if (!isDbReady()) return DEFAULT_CONFIG_STATUS;
+  const ds = getDataSource();
+  if (ds === 'direct_s3') {
+    return statusForS3(getS3Config(), true, null);
   }
+  if (ds === 'starfish') {
+    return statusForStarfish(getStarfishConfig(), true, null, getSyncStats());
+  }
+  return DEFAULT_CONFIG_STATUS;
 }
 
+/** Connect to a data source — replaces the POST /api/config call. */
 export async function saveConfig(input: ConfigInput): Promise<ConfigStatus> {
-  const res  = await fetch('/api/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+  const isStarfish =
+    'baseUrl' in input ||
+    'cap' in input ||
+    'publicRead' in input ||
+    (input as StarfishConfigInput).source === 'starfish';
+
+  if (isStarfish) {
+    const parsed = parseStarfishInput(input as StarfishConfigInput);
+    if (typeof parsed === 'string') throw new Error(parsed);
+
+    saveBrowserConfig({
+      mode:        'starfish',
+      baseUrl:     parsed.baseUrl,
+      app:         parsed.app,
+      publicRead:  parsed.publicRead,
+      capJson:     parsed.publicRead ? undefined : (typeof (input as StarfishConfigInput).cap === 'string' ? (input as StarfishConfigInput).cap as string : undefined),
+      devEdPrivHex:parsed.publicRead ? undefined : parsed.devEdPrivHex,
+      remember:    loadBrowserConfig()?.remember,
+    });
+
+    const stats = await configureStarfish(parsed);
+    return statusForStarfish(getStarfishConfig(), true, null, stats);
+  }
+
+  const s3Input = input as S3ConfigInput;
+  const parsed  = parseS3Input(s3Input);
+  if (typeof parsed === 'string') throw new Error(parsed);
+
+  saveBrowserConfig({
+    mode:            'direct_s3',
+    s3Bucket:        parsed.config.s3Bucket,
+    s3Prefix:        parsed.config.s3Prefix,
+    awsRegion:       parsed.config.awsRegion,
+    accessKeyId:     parsed.config.accessKeyId,
+    secretAccessKey: parsed.config.secretAccessKey,
+    endpointUrl:     parsed.config.endpointUrl,
+    remember:        loadBrowserConfig()?.remember,
   });
-  assertJson(res);
-  const body = await res.json();
-  if (!res.ok || !body.ok) throw new Error(body.error ?? `Configuration failed (${res.status})`);
-  return parseConfigStatus(body);
+
+  await configureDirectS3(parsed.config);
+  return statusForS3(getS3Config(), true, null);
 }
 
+/** Disconnect — replaces DELETE /api/config. */
 export async function clearConfig(): Promise<void> {
-  await fetch('/api/config', { method: 'DELETE' });
+  await resetDb();
+  sessionStorage.removeItem(BROWSER_CONFIG_KEY);
 }
 
+/** Re-sync Starfish data — replaces POST /api/sync. */
 export async function triggerSync(): Promise<ConfigStatus> {
-  const res  = await fetch('/api/sync', { method: 'POST' });
-  assertJson(res);
-  const body = await res.json();
-  if (!res.ok || !body.ok) throw new Error(body.error ?? `Sync failed (${res.status})`);
-  return parseConfigStatus(body);
+  const stats = await resyncStarfish();
+  return statusForStarfish(getStarfishConfig(), true, null, stats);
+}
+
+// ── Fetch functions (query → engine/queries) ──────────────────────────────────
+
+function toFilter(
+  range: DateRangeParams & {
+    day?:           number;
+    level?:         string;
+    handled?:       boolean;
+    error_type?:    string;
+    error_message?: string;
+  },
+) {
+  return {
+    from:          range.from,
+    to:            range.to,
+    limit:         range.limit,
+    app:           range.app,
+    day:           range.day,
+    level:         range.level,
+    handled:       range.handled,
+    errorType:     range.error_type,
+    errorMessage:  range.error_message,
+  };
+}
+
+export function fetchApps(range: DateRangeParams) {
+  return getApps({ from: range.from, to: range.to });
+}
+
+export function fetchOverview(range: DateRangeParams) {
+  return getOverview(toFilter(range));
+}
+
+export function fetchTimeseries(range: DateRangeParams) {
+  return getTimeseries(toFilter(range));
+}
+
+export function fetchTopEvents(range: DateRangeParams) {
+  return getTopEvents({ ...toFilter(range), limit: range.limit ?? 20 });
+}
+
+export function fetchTopScreens(range: DateRangeParams) {
+  return getTopScreens({ ...toFilter(range), limit: range.limit ?? 20 });
+}
+
+/** @deprecated Use fetchErrorGroups for the Errors section. */
+export function fetchTopErrors(range: DateRangeParams) {
+  return getTopErrors({ ...toFilter(range), limit: range.limit ?? 20 });
+}
+
+export function fetchErrorGroups(
+  range: DateRangeParams & { level?: string; handled?: boolean },
+) {
+  return getErrorGroups(toFilter(range));
+}
+
+export function fetchErrorTimeseries(range: DateRangeParams) {
+  return getErrorTimeseries(toFilter(range));
+}
+
+export function fetchErrorDetail(
+  range: DateRangeParams & { error_type?: string; error_message?: string },
+) {
+  return getErrorDetail(toFilter(range));
+}
+
+export function fetchDau(range: DateRangeParams) {
+  return getDau({ ...toFilter(range), limit: range.limit ?? 30 });
+}
+
+export function fetchRetention(range: DateRangeParams & { day?: number }) {
+  return getRetention({ ...toFilter(range), limit: range.limit ?? 30 });
+}
+
+export type QueryResult = { columns: string[]; rows: Record<string, unknown>[] };
+
+export async function runQuery(sql: string): Promise<QueryResult> {
+  if (!isReadOnlySql(sql)) {
+    throw new Error('Only SELECT / WITH queries are allowed');
+  }
+  const rows = await queryRaw(sql);
+  const columns = rows.length > 0 ? Object.keys(rows[0]!) : [];
+  return { columns, rows };
 }
 
 // ── Date utils ────────────────────────────────────────────────────────────────
@@ -400,26 +318,25 @@ export function formatDate(d: Date): string {
 
 export function daysAgo(n: number): string {
   const d = new Date();
-  d.setUTCDate(d.getUTCDate() - n);
+  d.setDate(d.getDate() - n);
   return formatDate(d);
 }
 
-export function relativeTime(iso: string | null): string {
-  if (!iso) return '—';
-  const diff = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(diff / 1000);
-  if (s < 60)   return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60)   return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24)   return `${h}h ago`;
-  const day = Math.floor(h / 24);
-  return `${day}d ago`;
+export function relativeTime(iso: string): string {
+  const ms    = Date.now() - new Date(iso).getTime();
+  const secs  = Math.floor(ms / 1000);
+  if (secs < 60)   return `${secs}s ago`;
+  const mins  = Math.floor(secs  / 60);
+  if (mins < 60)   return `${mins}m ago`;
+  const hours = Math.floor(mins  / 60);
+  if (hours < 24)  return `${hours}h ago`;
+  const days  = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 // ── Deprecated aliases ────────────────────────────────────────────────────────
-/** @deprecated */ export const saveS3Config        = saveConfig;
-/** @deprecated */ export const clearS3Config       = clearConfig;
-/** @deprecated */ export const loadBrowserS3Config = loadBrowserConfig;
-/** @deprecated */ export const saveBrowserS3Config = saveBrowserConfig;
-/** @deprecated */ export type S3ConfigStatus = ConfigStatus;
+
+/** @deprecated Use fetchErrorDetail */
+export const fetchErrorDetails = fetchErrorDetail;
+/** @deprecated Use fetchErrorGroups */
+export const fetchErrors       = fetchErrorGroups;

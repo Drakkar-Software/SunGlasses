@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Analytics dashboard — fully client-side via DuckDB-WASM** (`apps/analytics-dashboard`): the Fastify + native DuckDB server has been removed entirely. DuckDB now runs in the browser via `@duckdb/duckdb-wasm` (self-hosted `eh` + `mvp` bundles, no CDN requests). The app connects directly to your S3 bucket (Direct S3 mode) or pulls Parquet batches from a Starfish sync server (Starfish mode) — all from the browser. Credentials never leave the browser tab. The deployed Cloudflare build now works standalone with no backend to operate. Breaking: the `ANALYTICS_*` environment variables and local `.s3-config.local.json` / `.starfish-config.local.json` files are no longer read; connect via the in-app setup form instead.
+
+### Removed
+
+- **Analytics dashboard — Fastify server** (`apps/analytics-dashboard`): the `server/` directory, `/api/*` routes, `tsx` dev runner, and `concurrently` are removed. `pnpm dev` now runs Vite directly.
+- **Analytics dashboard — IAM / credential_chain auth** (`apps/analytics-dashboard`): the "Use IAM role" checkbox is removed. DuckDB-WASM cannot reach the instance-metadata endpoint from a browser; provide explicit AWS access keys instead.
+
 ## [0.13.0] — 2026-06-29
 
 ### Added

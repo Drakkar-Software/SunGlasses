@@ -150,7 +150,6 @@ export function App() {
                 s3Prefix:        saved.s3Prefix,
                 awsRegion:       saved.awsRegion,
                 endpointUrl:     saved.endpointUrl,
-                useIam:          saved.useIam,
                 accessKeyId:     saved.accessKeyId,
                 secretAccessKey: saved.secretAccessKey,
               });

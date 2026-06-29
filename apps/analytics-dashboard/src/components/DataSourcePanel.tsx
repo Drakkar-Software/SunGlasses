@@ -28,7 +28,6 @@ export function DataSourcePanel({ status, onConnected }: Props) {
   const [accessKeyId,      setAccessKeyId]      = useState(browser?.accessKeyId      ?? '');
   const [secretAccessKey,  setSecretAccessKey]  = useState(browser?.secretAccessKey  ?? '');
   const [endpointUrl,      setEndpointUrl]      = useState(status?.endpointUrl ?? browser?.endpointUrl ?? '');
-  const [useIam,           setUseIam]           = useState(status?.authMode === 'iam' || browser?.useIam === true);
 
   // Starfish fields
   const [baseUrl,      setBaseUrl]      = useState(status?.baseUrl    ?? browser?.baseUrl    ?? '');
@@ -57,10 +56,11 @@ export function DataSourcePanel({ status, onConnected }: Props) {
         remember,
       });
     } else {
-      input = { source: 'direct_s3', s3Bucket, s3Prefix, awsRegion, endpointUrl: endpointUrl || undefined, useIam };
-      if (!useIam) { input.accessKeyId = accessKeyId; input.secretAccessKey = secretAccessKey; }
+      input = { source: 'direct_s3', s3Bucket, s3Prefix, awsRegion, endpointUrl: endpointUrl || undefined };
+      input.accessKeyId     = accessKeyId;
+      input.secretAccessKey = secretAccessKey;
       saveBrowserConfig({
-        mode: 'direct_s3', s3Bucket, s3Prefix, awsRegion, endpointUrl, useIam,
+        mode: 'direct_s3', s3Bucket, s3Prefix, awsRegion, endpointUrl,
         accessKeyId:     remember ? accessKeyId     : undefined,
         secretAccessKey: remember ? secretAccessKey : undefined,
         remember,
@@ -210,31 +210,24 @@ export function DataSourcePanel({ status, onConnected }: Props) {
                     className={inputCls}
                   />
                 </Field>
-                <CheckField
-                  checked={useIam}
-                  onChange={setUseIam}
-                  label="Use IAM role / instance profile (no access keys)"
-                />
-                {!useIam ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Access key ID" required>
-                      <input
-                        type="text" required={!useIam} value={accessKeyId}
-                        onChange={(e) => setAccessKeyId(e.target.value)}
-                        autoComplete="off"
-                        className={inputCls}
-                      />
-                    </Field>
-                    <Field label="Secret access key" required>
-                      <input
-                        type="password" required={!useIam} value={secretAccessKey}
-                        onChange={(e) => setSecretAccessKey(e.target.value)}
-                        autoComplete="new-password"
-                        className={inputCls}
-                      />
-                    </Field>
-                  </div>
-                ) : null}
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Access key ID" required>
+                    <input
+                      type="text" required value={accessKeyId}
+                      onChange={(e) => setAccessKeyId(e.target.value)}
+                      autoComplete="off"
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Secret access key" required>
+                    <input
+                      type="password" required value={secretAccessKey}
+                      onChange={(e) => setSecretAccessKey(e.target.value)}
+                      autoComplete="new-password"
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
               </>
             )}
 
@@ -254,7 +247,8 @@ export function DataSourcePanel({ status, onConnected }: Props) {
           </form>
 
           <p className="mt-4 text-xs text-muted-fg">
-            Settings are stored in <code className="font-mono">{mode === 'starfish' ? '.starfish-config.local.json' : '.s3-config.local.json'}</code> on the server (gitignored).
+            Credentials stay in this browser tab only — never sent to any server.
+            Your S3 bucket or Starfish server must allow this origin via <strong className="text-foreground">CORS</strong>.
           </p>
         </div>
       </div>

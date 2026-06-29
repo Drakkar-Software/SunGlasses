@@ -165,8 +165,8 @@ function ErrorGroupItem({
           {group.message ?? '—'}
         </p>
         <p className="text-[0.6875rem] text-muted-fg mt-1">
-          Last seen {relativeTime(group.last_seen)}
-          {group.first_seen !== group.last_seen ? ` · first ${relativeTime(group.first_seen)}` : ''}
+          Last seen {relativeTime(group.last_seen ?? '')}
+          {group.first_seen !== group.last_seen ? ` · first ${relativeTime(group.first_seen ?? '')}` : ''}
         </p>
       </div>
 

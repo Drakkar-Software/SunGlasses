@@ -1,28 +1,24 @@
+/**
+ * Analytics queries — ported verbatim from server/queries.ts.
+ * Only the import of `query` changes (from ./duckdb instead of ./duckdb.js).
+ */
 import { query } from './duckdb.js';
 
-// ---------------------------------------------------------------------------
-// Shared filter types
-// ---------------------------------------------------------------------------
+// ── Filter types ──────────────────────────────────────────────────────────────
 
 export interface DateRange {
   from?: string;
-  to?: string;
+  to?:   string;
 }
 
 export interface FilterParams extends DateRange {
-  /** Filter by context.app.name. Pass the sentinel "(unknown)" for null rows. */
-  app?: string;
-  /** Force a specific event name (added to WHERE). */
-  event?: string;
-  /** Error-level filter, e.g. "error" or "warning". */
-  level?: string;
-  /** Error handled filter. */
-  handled?: boolean;
-  /** For error detail: filter to a specific error_type. */
-  errorType?: string;
-  /** For error detail: filter to a specific error_message. */
+  app?:          string;
+  event?:        string;
+  level?:        string;
+  handled?:      boolean;
+  errorType?:    string;
   errorMessage?: string;
-  limit?: number;
+  limit?:        number;
 }
 
 function clampLimit(limit: number | undefined, fallback: number): number {
@@ -30,15 +26,11 @@ function clampLimit(limit: number | undefined, fallback: number): number {
   return Math.min(Math.max(1, Math.floor(n)), 500);
 }
 
-/**
- * Build a WHERE clause from filter params.
- * All constraints are ANDed together.
- */
 function buildFilters(
-  p: FilterParams,
+  p:     FilterParams,
   extra: string[] = [],
 ): { clause: string; params: unknown[] } {
-  const parts: string[] = [];
+  const parts:  string[]  = [];
   const params: unknown[] = [];
 
   if (p.from) { parts.push('dt >= ?'); params.push(p.from); }
@@ -64,6 +56,7 @@ function buildFilters(
   }
 
   if (p.handled !== undefined) {
+    // Inlined intentionally — not parameterized (matches server behaviour)
     parts.push(
       `json_extract_string(properties, '$.$error_handled') = '${p.handled ? 'true' : 'false'}'`,
     );
@@ -85,13 +78,11 @@ function buildFilters(
   return { clause, params };
 }
 
-// ---------------------------------------------------------------------------
-// Apps list
-// ---------------------------------------------------------------------------
+// ── Apps ──────────────────────────────────────────────────────────────────────
 
 export interface AppRow {
-  app: string | null;
-  events: number;
+  app:       string | null;
+  events:    number;
   last_seen: string | null;
 }
 
@@ -112,23 +103,21 @@ export async function getApps(range: DateRange): Promise<AppRow[]> {
     params,
   );
   return rows.map((r) => ({
-    app: r['app'] != null ? String(r['app']) : null,
-    events: Number(r['events'] ?? 0),
+    app:       r['app']       != null ? String(r['app'])       : null,
+    events:    Number(r['events']    ?? 0),
     last_seen: r['last_seen'] != null ? String(r['last_seen']) : null,
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Overview
-// ---------------------------------------------------------------------------
+// ── Overview ──────────────────────────────────────────────────────────────────
 
 export interface OverviewResult {
-  total_events: number;
-  unique_devices: number;
-  distinct_events: number;
-  latest_dt: string | null;
-  latest_dau: number;
-  total_errors: number;
+  total_events:           number;
+  unique_devices:         number;
+  distinct_events:        number;
+  latest_dt:              string | null;
+  latest_dau:             number;
+  total_errors:           number;
   error_affected_devices: number;
 }
 
@@ -149,12 +138,11 @@ export async function getOverview(filter: FilterParams): Promise<OverviewResult>
     params,
   );
 
-  const base = rows[0] ?? {};
+  const base     = rows[0] ?? {};
   const latestDt = (base['latest_dt'] as string | null) ?? null;
 
   let latestDau = 0;
   if (latestDt) {
-    const { params: dauParams } = buildFilters(filter);
     const dauRows = await query(
       `
       SELECT count(DISTINCT anonymous_id) AS dau
@@ -168,23 +156,21 @@ export async function getOverview(filter: FilterParams): Promise<OverviewResult>
   }
 
   return {
-    total_events:           Number(base['total_events'] ?? 0),
-    unique_devices:         Number(base['unique_devices'] ?? 0),
-    distinct_events:        Number(base['distinct_events'] ?? 0),
+    total_events:           Number(base['total_events']           ?? 0),
+    unique_devices:         Number(base['unique_devices']         ?? 0),
+    distinct_events:        Number(base['distinct_events']        ?? 0),
     latest_dt:              latestDt,
     latest_dau:             latestDau,
-    total_errors:           Number(base['total_errors'] ?? 0),
+    total_errors:           Number(base['total_errors']           ?? 0),
     error_affected_devices: Number(base['error_affected_devices'] ?? 0),
   };
 }
 
-// ---------------------------------------------------------------------------
-// Timeseries
-// ---------------------------------------------------------------------------
+// ── Timeseries ────────────────────────────────────────────────────────────────
 
 export interface TimeseriesRow {
-  dt: string;
-  events: number;
+  dt:             string;
+  events:         number;
   unique_devices: number;
 }
 
@@ -204,20 +190,18 @@ export async function getTimeseries(filter: FilterParams): Promise<TimeseriesRow
     params,
   );
   return rows.map((r) => ({
-    dt:             String(r['dt'] ?? ''),
-    events:         Number(r['events'] ?? 0),
+    dt:             String(r['dt']             ?? ''),
+    events:         Number(r['events']         ?? 0),
     unique_devices: Number(r['unique_devices'] ?? 0),
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Top events
-// ---------------------------------------------------------------------------
+// ── Top events ────────────────────────────────────────────────────────────────
 
 export interface TopEventRow {
-  event: string;
-  event_type: string;
-  total: number;
+  event:          string;
+  event_type:     string;
+  total:          number;
   unique_devices: number;
 }
 
@@ -240,20 +224,18 @@ export async function getTopEvents(filter: FilterParams): Promise<TopEventRow[]>
     [...params, limit],
   );
   return rows.map((r) => ({
-    event:          String(r['event'] ?? ''),
-    event_type:     String(r['event_type'] ?? ''),
-    total:          Number(r['total'] ?? 0),
+    event:          String(r['event']          ?? ''),
+    event_type:     String(r['event_type']     ?? ''),
+    total:          Number(r['total']          ?? 0),
     unique_devices: Number(r['unique_devices'] ?? 0),
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Top screens
-// ---------------------------------------------------------------------------
+// ── Top screens ───────────────────────────────────────────────────────────────
 
 export interface TopScreenRow {
-  screen_name: string | null;
-  views: number;
+  screen_name:    string | null;
+  views:          number;
   unique_devices: number;
 }
 
@@ -275,20 +257,18 @@ export async function getTopScreens(filter: FilterParams): Promise<TopScreenRow[
     [...params, limit],
   );
   return rows.map((r) => ({
-    screen_name:    r['screen_name'] != null ? String(r['screen_name']) : null,
-    views:          Number(r['views'] ?? 0),
+    screen_name:    r['screen_name']    != null ? String(r['screen_name'])    : null,
+    views:          Number(r['views']          ?? 0),
     unique_devices: Number(r['unique_devices'] ?? 0),
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Top errors (legacy — kept for backwards compat with /api/errors/top)
-// ---------------------------------------------------------------------------
+// ── Top errors (legacy) ───────────────────────────────────────────────────────
 
 export interface TopErrorRow {
-  error_type: string | null;
-  level: string | null;
-  occurrences: number;
+  error_type:       string | null;
+  level:            string | null;
+  occurrences:      number;
   affected_devices: number;
 }
 
@@ -311,22 +291,20 @@ export async function getTopErrors(filter: FilterParams): Promise<TopErrorRow[]>
     [...params, limit],
   );
   return rows.map((r) => ({
-    error_type:      r['error_type'] != null ? String(r['error_type']) : null,
-    level:           r['level']      != null ? String(r['level'])      : null,
-    occurrences:     Number(r['occurrences'] ?? 0),
-    affected_devices:Number(r['affected_devices'] ?? 0),
+    error_type:       r['error_type']       != null ? String(r['error_type'])       : null,
+    level:            r['level']            != null ? String(r['level'])            : null,
+    occurrences:      Number(r['occurrences']      ?? 0),
+    affected_devices: Number(r['affected_devices'] ?? 0),
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Error groups (new — replaces top errors for the Errors section)
-// ---------------------------------------------------------------------------
+// ── Error groups ──────────────────────────────────────────────────────────────
 
 export interface ErrorGroupRow {
   error_type:       string | null;
   message:          string | null;
   level:            string | null;
-  handled:          string | null; // 'true' | 'false' as string
+  handled:          string | null;
   occurrences:      number;
   affected_devices: number;
   first_seen:       string | null;
@@ -356,26 +334,24 @@ export async function getErrorGroups(filter: FilterParams): Promise<ErrorGroupRo
     [...params, limit],
   );
   return rows.map((r) => ({
-    error_type:       r['error_type'] != null ? String(r['error_type']) : null,
-    message:          r['message']    != null ? String(r['message'])    : null,
-    level:            r['level']      != null ? String(r['level'])      : null,
-    handled:          r['handled']    != null ? String(r['handled'])    : null,
-    occurrences:      Number(r['occurrences'] ?? 0),
+    error_type:       r['error_type']  != null ? String(r['error_type'])  : null,
+    message:          r['message']     != null ? String(r['message'])     : null,
+    level:            r['level']       != null ? String(r['level'])       : null,
+    handled:          r['handled']     != null ? String(r['handled'])     : null,
+    occurrences:      Number(r['occurrences']      ?? 0),
     affected_devices: Number(r['affected_devices'] ?? 0),
-    first_seen:       r['first_seen'] != null ? String(r['first_seen']) : null,
-    last_seen:        r['last_seen']  != null ? String(r['last_seen'])  : null,
+    first_seen:       r['first_seen']  != null ? String(r['first_seen'])  : null,
+    last_seen:        r['last_seen']   != null ? String(r['last_seen'])   : null,
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Error timeseries (for sparklines in the group list)
-// ---------------------------------------------------------------------------
+// ── Error timeseries ──────────────────────────────────────────────────────────
 
 export interface ErrorTimeseriesRow {
-  error_type: string | null;
-  message:    string | null;
-  dt:         string;
-  occurrences:number;
+  error_type:  string | null;
+  message:     string | null;
+  dt:          string;
+  occurrences: number;
 }
 
 export async function getErrorTimeseries(filter: FilterParams): Promise<ErrorTimeseriesRow[]> {
@@ -402,30 +378,29 @@ export async function getErrorTimeseries(filter: FilterParams): Promise<ErrorTim
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Error detail
-// ---------------------------------------------------------------------------
+// ── Error detail ──────────────────────────────────────────────────────────────
 
 export interface ErrorSample {
-  stack:            string | null;
-  component_stack:  string | null;
-  cause:            string | null;
-  source:           string | null;
-  fatal:            boolean | null;
+  stack:           string | null;
+  component_stack: string | null;
+  cause:           string | null;
+  source:          string | null;
+  fatal:           boolean | null;
 }
 
 export interface ErrorDetailResult {
-  timeseries:  { dt: string; occurrences: number }[];
-  samples:     ErrorSample[];
-  breakdowns:  {
-    app_version:     string | null;
-    platform:        string | null;
-    occurrences:     number;
-    affected_devices:number;
+  timeseries: { dt: string; occurrences: number }[];
+  samples:    ErrorSample[];
+  breakdowns: {
+    app_version:      string | null;
+    platform:         string | null;
+    occurrences:      number;
+    affected_devices: number;
   }[];
 }
 
 export async function getErrorDetail(filter: FilterParams): Promise<ErrorDetailResult> {
+  // Build the WHERE clause three times (identical) to satisfy Promise.all independently
   const { clause: c1, params: p1 } = buildFilters({ ...filter, event: '$error' });
   const { clause: c2, params: p2 } = buildFilters({ ...filter, event: '$error' });
   const { clause: c3, params: p3 } = buildFilters({ ...filter, event: '$error' });
@@ -452,9 +427,9 @@ export async function getErrorDetail(filter: FilterParams): Promise<ErrorDetailR
       FROM events()
       ${c2}
       AND (
-        json_extract_string(properties, '$.$error_stack')          IS NOT NULL
-        OR json_extract_string(properties, '$.$error_component_stack') IS NOT NULL
-        OR json_extract_string(properties, '$.$error_cause')       IS NOT NULL
+        json_extract_string(properties, '$.$error_stack')               IS NOT NULL
+        OR json_extract_string(properties, '$.$error_component_stack')  IS NOT NULL
+        OR json_extract_string(properties, '$.$error_cause')            IS NOT NULL
       )
       LIMIT 3
       `,
@@ -492,18 +467,16 @@ export async function getErrorDetail(filter: FilterParams): Promise<ErrorDetailR
     breakdowns: breakRows.map((r) => ({
       app_version:      r['app_version'] != null ? String(r['app_version']) : null,
       platform:         r['platform']    != null ? String(r['platform'])    : null,
-      occurrences:      Number(r['occurrences'] ?? 0),
+      occurrences:      Number(r['occurrences']      ?? 0),
       affected_devices: Number(r['affected_devices'] ?? 0),
     })),
   };
 }
 
-// ---------------------------------------------------------------------------
-// DAU
-// ---------------------------------------------------------------------------
+// ── DAU ───────────────────────────────────────────────────────────────────────
 
 export interface DauRow {
-  dt: string;
+  dt:  string;
   dau: number;
 }
 
@@ -524,14 +497,12 @@ export async function getDau(filter: FilterParams): Promise<DauRow[]> {
     [...params, limit],
   );
   return rows.map((r) => ({
-    dt:  String(r['dt'] ?? ''),
+    dt:  String(r['dt']  ?? ''),
     dau: Number(r['dau'] ?? 0),
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Retention
-// ---------------------------------------------------------------------------
+// ── Retention ─────────────────────────────────────────────────────────────────
 
 export interface RetentionRow {
   cohort_date:   string;
@@ -543,8 +514,8 @@ export interface RetentionRow {
 export async function getRetention(
   filter: FilterParams & { day?: number },
 ): Promise<RetentionRow[]> {
-  const limit  = clampLimit(filter.limit, 30);
-  const dayN   = Math.min(Math.max(1, Math.floor(filter.day ?? 7)), 90);
+  const limit = clampLimit(filter.limit, 30);
+  const dayN  = Math.min(Math.max(1, Math.floor(filter.day ?? 7)), 90);
   const { clause, params } = buildFilters(filter);
 
   const rows = await query(
@@ -582,9 +553,9 @@ export async function getRetention(
   );
 
   return rows.map((r) => ({
-    cohort_date:   String(r['cohort_date'] ?? ''),
-    cohort_size:   Number(r['cohort_size'] ?? 0),
-    retained:      Number(r['retained'] ?? 0),
+    cohort_date:   String(r['cohort_date']   ?? ''),
+    cohort_size:   Number(r['cohort_size']   ?? 0),
+    retained:      Number(r['retained']      ?? 0),
     retention_pct: Number(r['retention_pct'] ?? 0),
   }));
 }
