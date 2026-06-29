@@ -252,7 +252,7 @@ export async function getTopEvents(filter: FilterParams): Promise<TopEventRow[]>
 // ---------------------------------------------------------------------------
 
 export interface TopScreenRow {
-  path: string | null;
+  screen_name: string | null;
   views: number;
   unique_devices: number;
 }
@@ -263,19 +263,19 @@ export async function getTopScreens(filter: FilterParams): Promise<TopScreenRow[
   const rows = await query(
     `
     SELECT
-      json_extract_string(properties, '$.$$path') AS path,
-      count(*)                                     AS views,
-      count(DISTINCT anonymous_id)                 AS unique_devices
+      json_extract_string(properties, '$.$screen_name') AS screen_name,
+      count(*)                                           AS views,
+      count(DISTINCT anonymous_id)                       AS unique_devices
     FROM events()
     ${clause}
-    GROUP BY path
+    GROUP BY screen_name
     ORDER BY views DESC
     LIMIT ?
     `,
     [...params, limit],
   );
   return rows.map((r) => ({
-    path:           r['path'] != null ? String(r['path']) : null,
+    screen_name:    r['screen_name'] != null ? String(r['screen_name']) : null,
     views:          Number(r['views'] ?? 0),
     unique_devices: Number(r['unique_devices'] ?? 0),
   }));

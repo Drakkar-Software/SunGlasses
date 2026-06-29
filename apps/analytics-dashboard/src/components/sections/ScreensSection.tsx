@@ -8,7 +8,7 @@ interface Props {
 }
 
 const COLUMNS = [
-  { key: 'path',           label: 'Screen / Path' },
+  { key: 'screen_name',    label: 'Screen name' },
   { key: 'views',          label: 'Views',   align: 'right' as const },
   { key: 'unique_devices', label: 'Devices', align: 'right' as const },
 ];

@@ -140,7 +140,7 @@ export interface TopEventRow {
 }
 
 export interface TopScreenRow {
-  path: string | null;
+  screen_name: string | null;
   views: number;
   unique_devices: number;
 }
