@@ -181,6 +181,9 @@ export async function configureStarfish(config: StarfishConfig): Promise<SyncSta
   try {
     // Pull any new batches from the Starfish server
     const stats = await syncParquetCache(config);
+    // Re-download files already in the manifest but not in the in-memory registry
+    // (e.g. after a page reload — the registry is ephemeral, the manifest persists in localStorage)
+    await rehydrateRegistry(config);
     await setupStarfishCache(config, stats);
     await testConnection();
     return stats;

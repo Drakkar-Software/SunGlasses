@@ -138,11 +138,9 @@ export async function rehydrateRegistry(config: StarfishConfig): Promise<void> {
   const missing  = Object.keys(manifest.files).filter((f) => !_registry.has(f));
   if (missing.length === 0) return;
 
-  await Promise.all(
-    missing.map(async (fileName) => {
-      const batchId = fileName.endsWith('.parquet') ? fileName.slice(0, -'.parquet'.length) : fileName;
-      const { data } = await pullBatch(config, batchId);
-      _registry.set(fileName, new Uint8Array(data));
-    }),
-  );
+  for (const fileName of missing) {
+    const batchId = fileName.endsWith('.parquet') ? fileName.slice(0, -'.parquet'.length) : fileName;
+    const { data } = await pullBatch(config, batchId);
+    _registry.set(fileName, new Uint8Array(data));
+  }
 }

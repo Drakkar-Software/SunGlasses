@@ -45,33 +45,44 @@ function createStarfishClient(config: StarfishConfig): StarfishClient {
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 async function starfishGet(
   config:       StarfishConfig,
   pathAndQuery: string,
   accept:       string,
 ): Promise<Response> {
-  if (config.publicRead) {
-    return fetch(`${config.baseUrl}${pathAndQuery}`, {
-      method:  'GET',
-      headers: { [HEADER_ACCEPT]: accept },
-    });
-  }
+  for (let attempt = 0; ; attempt++) {
+    let res: Response;
+    if (config.publicRead) {
+      res = await fetch(`${config.baseUrl}${pathAndQuery}`, {
+        method:  'GET',
+        headers: { [HEADER_ACCEPT]: accept },
+      });
+    } else {
+      const url = new URL(config.baseUrl);
+      const { sig, ts, nonce } = await signRequest(
+        { method: 'GET', pathAndQuery, host: url.host },
+        config.devEdPrivHex!,
+      );
+      res = await fetch(`${config.baseUrl}${pathAndQuery}`, {
+        method:  'GET',
+        headers: {
+          [HEADER_ACCEPT]:         accept,
+          [HEADER_AUTHORIZATION]:  `Cap ${encodeCapAuth(config.cap!)}`,
+          [HEADER_SIG]:            sig,
+          [HEADER_TS]:             String(ts),
+          [HEADER_NONCE]:          nonce,
+        },
+      });
+    }
 
-  const url = new URL(config.baseUrl);
-  const { sig, ts, nonce } = await signRequest(
-    { method: 'GET', pathAndQuery, host: url.host },
-    config.devEdPrivHex!,
-  );
-  return fetch(`${config.baseUrl}${pathAndQuery}`, {
-    method:  'GET',
-    headers: {
-      [HEADER_ACCEPT]:         accept,
-      [HEADER_AUTHORIZATION]:  `Cap ${encodeCapAuth(config.cap!)}`,
-      [HEADER_SIG]:            sig,
-      [HEADER_TS]:             String(ts),
-      [HEADER_NONCE]:          nonce,
-    },
-  });
+    if (res.status !== 429 || attempt >= 2) return res;
+    const retryAfter = Number(res.headers.get('Retry-After') ?? 2);
+    await sleep((Number.isFinite(retryAfter) ? retryAfter : 2) * 1000);
+  }
 }
 
 /** Paginated list of batch IDs under `events/{app}/`. */
@@ -96,11 +107,21 @@ export async function pullBatch(
   config:  StarfishConfig,
   batchId: string,
 ): Promise<{ data: ArrayBuffer; etag: string | null }> {
+  const id   = batchId.endsWith('.parquet') ? batchId.slice(0, -'.parquet'.length) : batchId;
+  const path = `/pull/events/${encodeURIComponent(config.app)}/${encodeURIComponent(id)}`;
+
+  // Public-read: use starfishGet directly so 429 retry applies.
+  if (config.publicRead) {
+    const res = await starfishGet(config, path, '*/*');
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Starfish pull failed (${res.status}): ${text}`);
+    }
+    return { data: await res.arrayBuffer(), etag: res.headers.get('ETag') };
+  }
+
   const client = createStarfishClient(config);
-  const id = batchId.endsWith('.parquet') ? batchId.slice(0, -'.parquet'.length) : batchId;
-  const result = await client.pullBlob(
-    `/pull/events/${encodeURIComponent(config.app)}/${encodeURIComponent(id)}`,
-  );
+  const result = await client.pullBlob(path);
   return { data: result.data, etag: result.hash };
 }
 

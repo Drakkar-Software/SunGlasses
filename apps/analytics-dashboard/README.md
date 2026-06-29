@@ -73,6 +73,8 @@ Click **Refresh data** to pull new batches. The sync is incremental: already-dow
 
 **Base URL format:** enter the full external API root including the `/sync/v1/<namespace>` prefix, e.g. `https://sync.example.com/sync/v1/analytics`. The dashboard then appends `/list/events/<app>` and `/pull/events/<app>/<id>` automatically. Entering the bare host without the namespace prefix will hit nginx's 404 catch-all and surface in the browser as a misleading CORS error. For the `events` collection when `read_roles: ["public"]`, enable **Public read** in the form (no cap-cert required).
 
+**Troubleshooting — CORS error that is actually a 522:** if the browser reports "No 'Access-Control-Allow-Origin' header" and the network panel shows `net::ERR_FAILED 522`, the sync origin is **unreachable from Cloudflare** (tunnel down, stale DNS, or firewall blocking Cloudflare IP ranges). The nginx CORS config is not the problem — Cloudflare's own 522 error page carries no CORS headers, which the browser misreports as a CORS failure. Fix: restore the Cloudflare→origin link, then verify `curl https://<host>/health` returns 200.
+
 ### Direct S3
 
 DuckDB-WASM loads the `httpfs` extension and reads Parquet directly from `s3://<bucket>/<prefix>/**/*.parquet`. Provide explicit access keys (IAM / credential-chain is not available in the browser).

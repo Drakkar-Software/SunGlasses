@@ -142,7 +142,7 @@ export function DataSourcePanel({ status, onConnected }: Props) {
                   <input
                     type="text" required value={app}
                     onChange={(e) => setApp(e.target.value)}
-                    placeholder="octochat"
+                    placeholder="my app"
                     autoComplete="off"
                     className={inputCls}
                   />
