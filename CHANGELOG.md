@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-06-29
+
 ### Added
 
 - **Richer error metadata** (`@drakkar.software/sunglasses-core`, `@drakkar.software/sunglasses-react`, `@drakkar.software/sunglasses-react-native`): `captureException` now collects and emits a much richer set of `$error_*` properties with zero configuration. New fields: `$error_component_stack` (React `errorInfo.componentStack` from error boundaries), `$error_cause` (the `error.cause` chain serialized as `"Name: msg\ncaused by: …"`, depth-capped at 3), `$error_extra` (custom scalar properties on the Error object, e.g. `code`, `statusCode`), `$error_fatal` (RN `ErrorUtils` `isFatal`), `$error_source` (origin tag: `"boundary"` / `"global"` / `"rejection"` / `"console"`), and `$error_filename` / `$error_line` / `$error_column` (web `ErrorEvent` source location). Three new options on `CaptureExceptionOptions`: `componentStack`, `fatal`, `source` (set by the framework bindings, highest precedence).
