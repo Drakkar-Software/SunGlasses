@@ -87,7 +87,9 @@ All credentials stay in the browser tab. When **Remember credentials** is off, t
 pnpm --filter analytics-dashboard build
 ```
 
-The output (`dist/`) is a fully static SPA including self-hosted DuckDB WASM bundles (~80 MB uncompressed, ~18 MB gzip). Deploy to any static host (Cloudflare Workers, Vercel, Netlify, an S3 bucket).
+The output (`dist/`) is a small static SPA (~900 KB JS + CSS). The DuckDB WASM bundles are **not** bundled — they are fetched from `cdn.jsdelivr.net` the first time the user connects to a data source. The browser must be able to reach `cdn.jsdelivr.net`.
+
+Deploy to any static host (Cloudflare Workers, Vercel, Netlify, an S3 bucket).
 
 ## Privacy
 

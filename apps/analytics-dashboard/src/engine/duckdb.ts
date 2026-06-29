@@ -7,11 +7,6 @@
  * Lazy init: getConn() initialises the WASM instance on first call.
  */
 import * as duckdb from '@duckdb/duckdb-wasm';
-// Self-hosted bundles — Vite resolves these as URLs (no external CDN)
-import duckdbMvpWasm   from '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url';
-import duckdbMvpWorker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url';
-import duckdbEhWasm    from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url';
-import duckdbEhWorker  from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url';
 
 import type { S3Config, StarfishConfig, SyncStats, DataSourceKind } from './config.js';
 import { formatS3Error } from './config.js';
@@ -40,14 +35,17 @@ let _lastError:    string | null                      = null;
 async function ensureDb(): Promise<duckdb.AsyncDuckDB> {
   if (_db) return _db;
 
-  const BUNDLES: duckdb.DuckDBBundles = {
-    mvp: { mainModule: duckdbMvpWasm, mainWorker: duckdbMvpWorker },
-    eh:  { mainModule: duckdbEhWasm,  mainWorker: duckdbEhWorker },
-  };
-  const bundle = await duckdb.selectBundle(BUNDLES);
-  const worker = new Worker(bundle.mainWorker!);
+  // Bundles loaded from jsDelivr at runtime — avoids bundling 35–41 MiB .wasm
+  // files into dist/ (Cloudflare Workers enforces a 25 MiB per-asset limit).
+  // The worker URL is cross-origin, so we wrap it in a same-origin blob.
+  const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+  const workerUrl = URL.createObjectURL(
+    new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' }),
+  );
+  const worker = new Worker(workerUrl);
   _db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
   await _db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  URL.revokeObjectURL(workerUrl);
   return _db;
 }
 
