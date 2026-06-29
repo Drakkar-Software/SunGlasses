@@ -335,10 +335,20 @@ function parseConfigStatus(body: Record<string, unknown>): ConfigStatus {
 }
 
 export async function fetchConfigStatus(): Promise<ConfigStatus> {
-  const res  = await fetch('/api/config/status');
+  const res = await fetch('/api/config/status');
+  assertJson(res);
   const body = await res.json();
   if (!res.ok || !body.ok) throw new Error(body.error ?? `Config status failed (${res.status})`);
   return parseConfigStatus(body);
+}
+
+function assertJson(res: Response): void {
+  const ct = res.headers.get('content-type') ?? '';
+  if (!ct.includes('application/json')) {
+    throw new Error(
+      'No local API server detected. Run the dashboard locally with `pnpm start` (or `pnpm dev`) to connect to your data.',
+    );
+  }
 }
 
 export async function saveConfig(input: ConfigInput): Promise<ConfigStatus> {
@@ -347,6 +357,7 @@ export async function saveConfig(input: ConfigInput): Promise<ConfigStatus> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+  assertJson(res);
   const body = await res.json();
   if (!res.ok || !body.ok) throw new Error(body.error ?? `Configuration failed (${res.status})`);
   return parseConfigStatus(body);
@@ -358,6 +369,7 @@ export async function clearConfig(): Promise<void> {
 
 export async function triggerSync(): Promise<ConfigStatus> {
   const res  = await fetch('/api/sync', { method: 'POST' });
+  assertJson(res);
   const body = await res.json();
   if (!res.ok || !body.ok) throw new Error(body.error ?? `Sync failed (${res.status})`);
   return parseConfigStatus(body);
