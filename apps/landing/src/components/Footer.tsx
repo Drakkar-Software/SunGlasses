@@ -3,6 +3,7 @@ import { Button } from './ui/Button';
 
 const DOCS_URL = 'https://drakkar-software.github.io/SunGlasses/';
 const GITHUB_URL = 'https://github.com/Drakkar-Software/SunGlasses';
+const DASHBOARD_URL = 'https://dashboard.sunglasses.drakkar.software';
 
 const DOC_LINKS = [
   { label: 'Getting started', href: `${DOCS_URL}getting-started/intro` },
@@ -110,6 +111,20 @@ export function Footer() {
               Your data stays on your infrastructure. No third-party cloud, no per-seat pricing,
               no surprises in GDPR audits.
             </p>
+            <a
+              href={DASHBOARD_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm text-muted-fg hover:text-lens transition-colors mb-3"
+            >
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+              Analytics dashboard
+            </a>
             <a
               href={GITHUB_URL}
               target="_blank"

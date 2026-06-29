@@ -5,6 +5,7 @@ import { Button } from './ui/Button';
 
 const DOCS_URL = 'https://drakkar-software.github.io/SunGlasses/';
 const GITHUB_URL = 'https://github.com/Drakkar-Software/SunGlasses';
+const DASHBOARD_URL = 'https://dashboard.sunglasses.drakkar.software';
 
 const NAV_LINKS = [
   { label: 'Features', href: '#features' },
@@ -77,6 +78,18 @@ export function Nav() {
             className="p-2 text-muted-fg hover:text-foreground rounded-lg hover:bg-surface-2 transition-colors duration-150 hidden sm:flex"
           >
             <GithubIcon />
+          </a>
+
+          <a
+            href={DASHBOARD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 text-sm text-muted-fg hover:text-foreground rounded-lg hover:bg-surface-2 transition-colors duration-150 hidden md:flex items-center gap-1"
+          >
+            Dashboard
+            <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 17 17 7M7 7h10v10" />
+            </svg>
           </a>
 
           <ThemeToggle />

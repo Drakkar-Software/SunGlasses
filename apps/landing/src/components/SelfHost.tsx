@@ -1,4 +1,7 @@
+import { Button } from './ui/Button';
 import { SectionHeading } from './ui/SectionHeading';
+
+const DASHBOARD_URL = 'https://dashboard.sunglasses.drakkar.software';
 
 interface Step {
   n: number;
@@ -90,7 +93,7 @@ export function SelfHost() {
             <h3 className="font-heading font-semibold text-foreground text-lg mb-2">
               What's in the analytics dashboard
             </h3>
-            <ul className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-4 text-sm text-muted-fg list-none m-0 p-0">
+            <ul className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-4 text-sm text-muted-fg list-none m-0 p-0 mb-6">
               {DASHBOARD_FEATURES.map((f) => (
                 <li key={f} className="flex items-center gap-1.5">
                   <span className="text-glare shrink-0" aria-hidden="true">◆</span>
@@ -98,6 +101,18 @@ export function SelfHost() {
                 </li>
               ))}
             </ul>
+            <Button
+              href={DASHBOARD_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              size="sm"
+              variant="secondary"
+            >
+              Open dashboard
+              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 17 17 7M7 7h10v10" />
+              </svg>
+            </Button>
           </div>
         </div>
       </div>
