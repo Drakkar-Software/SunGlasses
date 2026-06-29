@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SunGlasses — Privacy-first event tracking</title>
+    <meta name="description" content="Privacy-first event tracking for React, React Native and Expo. PII stripped automatically. Opt-out by default. Self-hostable." />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="SunGlasses — Privacy-first event tracking" />
+    <meta property="og:description" content="Track what matters. Protect what doesn't. Zero PII, zero drama." />
+    <meta property="og:type" content="website" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="SunGlasses — Privacy-first event tracking" />
+    <meta name="twitter:description" content="Track what matters. Protect what doesn't. Zero PII, zero drama." />
+
+    <!-- Theme -->
+    <meta name="theme-color" content="#0A0F1C" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- No-FOUC: apply theme before first paint -->
+    <script>
+      (function () {
+        var saved = localStorage.getItem('sg-landing-theme');
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = saved ? saved : (prefersDark ? 'dark' : 'light');
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

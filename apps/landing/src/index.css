@@ -1,0 +1,203 @@
+/* ── Fonts (self-hosted — no external CDN calls) ───────────────────────── */
+@import "@fontsource/space-grotesk/400.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+@import "tailwindcss";
+
+/* ── Dark mode variant ──────────────────────────────────────────────────── */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Design tokens — default = light ("shades off") ────────────────────── */
+@theme {
+  /* Surfaces */
+  --color-ink:       #F7FAFD;
+  --color-surface:   #FFFFFF;
+  --color-surface-2: #EBF3FA;
+  --color-foreground:#0B1220;
+  --color-muted-fg:  #5A6B82;
+  --color-border:    rgba(14, 165, 233, 0.15);
+
+  /* Lens — primary (sky blue in light mode) */
+  --color-lens:       #0EA5E9;
+  --color-lens-hover: #38BDF8;
+  --color-lens-fg:    #FFFFFF;
+  --color-lens-dim:   rgba(14, 165, 233, 0.10);
+
+  /* Glare — accent, used sparingly (amber, matches docs site) */
+  --color-glare:     #D97706;
+  --color-glare-dim: rgba(217, 119, 6, 0.10);
+  --color-glare-fg:  #FFFFFF;
+
+  /* Status */
+  --color-destructive: #EF4444;
+  --color-success:     #10B981;
+  --color-warn:        #F59E0B;
+
+  /* Fonts */
+  --font-heading: 'Space Grotesk', system-ui, sans-serif;
+  --font-sans:    system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:    'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+/* ── Dark mode ("shades on") — the primary aesthetic ────────────────────── */
+.dark {
+  --color-ink:       #0A0F1C;
+  --color-surface:   #101A2B;
+  --color-surface-2: #162032;
+  --color-foreground:#EAF2FB;
+  --color-muted-fg:  #8295AE;
+  --color-border:    rgba(120, 160, 210, 0.14);
+
+  --color-lens:       #39BAF0;
+  --color-lens-hover: #5BC8F4;
+  --color-lens-fg:    #0A0F1C;
+  --color-lens-dim:   rgba(57, 186, 240, 0.12);
+
+  --color-glare:     #FBBF24;
+  --color-glare-dim: rgba(251, 191, 36, 0.12);
+  --color-glare-fg:  #0A0F1C;
+
+  --color-destructive: #F87171;
+  --color-success:     #34D399;
+  --color-warn:        #FB923C;
+
+  color-scheme: dark;
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  html.dark { color-scheme: dark; }
+
+  body {
+    margin: 0;
+    background-color: var(--color-ink);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.6;
+    min-height: 100dvh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  pre, code, kbd, samp {
+    font-family: var(--font-mono);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-lens);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-muted-fg); }
+
+  button, a, [role="button"] { touch-action: manipulation; }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ── Custom utilities ────────────────────────────────────────────────────── */
+@utility font-heading {
+  font-family: var(--font-heading);
+}
+
+@utility font-mono {
+  font-family: var(--font-mono);
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Frosted glass card */
+@utility glass {
+  background-color: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid var(--color-border);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 8px 40px rgba(0, 0, 0, 0.18);
+}
+
+/* Hero section background */
+@utility bg-hero {
+  background-image:
+    radial-gradient(ellipse 70% 50% at 65% 10%,
+      color-mix(in srgb, var(--color-lens) 10%, transparent) 0%,
+      transparent 70%),
+    radial-gradient(ellipse 50% 70% at 10% 85%,
+      color-mix(in srgb, var(--color-glare) 7%, transparent) 0%,
+      transparent 60%);
+  background-color: var(--color-ink);
+}
+
+/* Code syntax token classes */
+@utility tok-kw    { color: var(--color-lens); }
+@utility tok-str   { color: var(--color-glare); }
+@utility tok-cmt   { color: var(--color-muted-fg); font-style: italic; }
+@utility tok-type  { color: var(--color-success); }
+@utility tok-punct { color: var(--color-foreground); opacity: 0.45; }
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes lens-sweep {
+  0%   { transform: translateX(-100%); opacity: 0; }
+  5%   { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { transform: translateX(500%); opacity: 0; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes glare-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.animate-lens-sweep {
+  animation: lens-sweep 1.6s ease-in-out forwards;
+}
+
+.animate-fade-up {
+  animation: fade-up 0.5s ease-out both;
+}
+
+.animate-glare {
+  animation: glare-pulse 2.4s ease-in-out infinite;
+}
