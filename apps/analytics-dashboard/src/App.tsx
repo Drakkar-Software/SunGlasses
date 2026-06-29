@@ -5,64 +5,126 @@ import {
   clearConfig,
   daysAgo,
   fetchConfigStatus,
-  fetchDau,
-  fetchOverview,
-  fetchRetention,
-  fetchTimeseries,
-  fetchTopErrors,
-  fetchTopEvents,
-  fetchTopScreens,
   loadBrowserConfig,
   saveConfig,
-  type DauRow,
-  type OverviewData,
-  type RetentionRow,
-  type TimeseriesRow,
-  type TopErrorRow,
-  type TopEventRow,
-  type TopScreenRow,
 } from './api';
-import { DataSourcePanel, SyncBar } from './components/DataSourcePanel';
-import { DateRangeControls } from './components/DateRangeControls';
-import { DauChart } from './components/DauChart';
-import { ErrorsTable } from './components/ErrorsTable';
-import { KpiCards } from './components/KpiCards';
-import { QueryConsole } from './components/QueryConsole';
-import { RetentionTable } from './components/RetentionTable';
-import { ScreensTable } from './components/ScreensTable';
-import { TimeSeriesChart } from './components/TimeSeriesChart';
-import { TopEventsTable } from './components/TopEventsTable';
+import { DataSourcePanel } from './components/DataSourcePanel';
+import { Sidebar } from './components/Sidebar';
+import type { Section } from './components/Sidebar';
+import { FilterBar } from './components/FilterBar';
+import { OverviewSection } from './components/sections/OverviewSection';
+import { EventsSection } from './components/sections/EventsSection';
+import { ScreensSection } from './components/sections/ScreensSection';
+import { ErrorsSection } from './components/sections/ErrorsSection';
+import { RetentionSection } from './components/sections/RetentionSection';
+import { QuerySection } from './components/sections/QuerySection';
 
-type Tab = 'overview' | 'breakdowns' | 'retention' | 'query';
+// ── Loading / Error screens ───────────────────────────────────────────────────
+
+function FullScreenLoading() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <svg
+          aria-hidden="true"
+          className="w-8 h-8 text-primary animate-spin"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
+        </svg>
+        <p className="text-sm text-muted-fg">Connecting…</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Section titles ────────────────────────────────────────────────────────────
+
+const SECTION_TITLE: Record<Section, string> = {
+  overview:  'Overview',
+  events:    'Events',
+  screens:   'Screens',
+  errors:    'Errors',
+  retention: 'Retention',
+  query:     'Query console',
+};
+
+// ── App shell ─────────────────────────────────────────────────────────────────
+
+function AppShell({
+  status,
+  onStatusChange,
+  onDisconnect,
+}: {
+  status: ConfigStatus;
+  onStatusChange: (s: ConfigStatus) => void;
+  onDisconnect: () => void;
+}) {
+  const [section, setSection]   = useState<Section>('overview');
+  const [mobileOpen, setMobile] = useState(false);
+  const [selectedApp, setApp]   = useState<string | undefined>(undefined);
+  const [range, setRange]       = useState<DateRangeParams>({
+    from: daysAgo(30),
+    to:   daysAgo(0),
+  });
+
+  const rangeWithApp = { ...range, app: selectedApp };
+
+  const handleDisconnect = useCallback(async () => {
+    await clearConfig().catch(() => undefined);
+    onDisconnect();
+  }, [onDisconnect]);
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background">
+      <Sidebar
+        section={section}
+        onSection={setSection}
+        status={status}
+        onSynced={onStatusChange}
+        onChangeConnection={handleDisconnect}
+        mobileOpen={mobileOpen}
+        onMobileClose={() => setMobile(false)}
+      />
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <FilterBar
+          range={range}
+          onRange={setRange}
+          selectedApp={selectedApp}
+          onApp={setApp}
+          onMenuOpen={() => setMobile(true)}
+        />
+
+        <main className="flex-1 overflow-y-auto p-5">
+          <h1 className="sr-only">{SECTION_TITLE[section]}</h1>
+
+          {section === 'overview'  ? <OverviewSection  range={rangeWithApp} /> : null}
+          {section === 'events'    ? <EventsSection    range={rangeWithApp} /> : null}
+          {section === 'screens'   ? <ScreensSection   range={rangeWithApp} /> : null}
+          {section === 'errors'    ? <ErrorsSection    range={rangeWithApp} /> : null}
+          {section === 'retention' ? <RetentionSection range={rangeWithApp} /> : null}
+          {section === 'query'     ? <QuerySection /> : null}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// ── Root App component ────────────────────────────────────────────────────────
 
 export function App() {
-  const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null);
+  const [configStatus,  setConfigStatus]  = useState<ConfigStatus | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSetup,     setShowSetup]     = useState(false);
 
-  const [tab, setTab] = useState<Tab>('overview');
-  const [range, setRange] = useState<DateRangeParams>({
-    from: daysAgo(30),
-    to: daysAgo(0),
-  });
-  const [retentionDay, setRetentionDay] = useState(7);
-  const [error, setError] = useState<string | null>(null);
-
-  const [overview, setOverview] = useState<OverviewData | null>(null);
-  const [timeseries, setTimeseries] = useState<TimeseriesRow[]>([]);
-  const [dau, setDau] = useState<DauRow[]>([]);
-  const [topEvents, setTopEvents] = useState<TopEventRow[]>([]);
-  const [topScreens, setTopScreens] = useState<TopScreenRow[]>([]);
-  const [topErrors, setTopErrors] = useState<TopErrorRow[]>([]);
-  const [retention, setRetention] = useState<RetentionRow[]>([]);
-
-  const [loadingOverview, setLoadingOverview] = useState(false);
-  const [loadingBreakdowns, setLoadingBreakdowns] = useState(false);
-  const [loadingRetention, setLoadingRetention] = useState(false);
-
+  // Boot: fetch status and optionally auto-connect from saved browser config
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    void (async () => {
       try {
         let status = await fetchConfigStatus();
         if (!cancelled && !status.ready && canAutoConnectFromBrowser()) {
@@ -71,232 +133,85 @@ export function App() {
             if (saved.publicRead || (saved.capJson && saved.devEdPrivHex)) {
               try {
                 status = await saveConfig({
-                  source: 'starfish',
-                  baseUrl: saved.baseUrl,
-                  app: saved.app,
-                  publicRead: saved.publicRead,
-                  cap: saved.capJson,
+                  source:       'starfish',
+                  baseUrl:      saved.baseUrl,
+                  app:          saved.app,
+                  publicRead:   saved.publicRead,
+                  cap:          saved.capJson,
                   devEdPrivHex: saved.devEdPrivHex,
                 });
-              } catch {
-                // Show setup form with saved fields
-              }
+              } catch { /* fall through to setup screen */ }
             }
           } else if (saved?.s3Bucket) {
             try {
               status = await saveConfig({
-                source: 'direct_s3',
-                s3Bucket: saved.s3Bucket,
-                s3Prefix: saved.s3Prefix,
-                awsRegion: saved.awsRegion,
-                endpointUrl: saved.endpointUrl,
-                useIam: saved.useIam,
-                accessKeyId: saved.accessKeyId,
+                source:          'direct_s3',
+                s3Bucket:        saved.s3Bucket,
+                s3Prefix:        saved.s3Prefix,
+                awsRegion:       saved.awsRegion,
+                endpointUrl:     saved.endpointUrl,
+                useIam:          saved.useIam,
+                accessKeyId:     saved.accessKeyId,
                 secretAccessKey: saved.secretAccessKey,
               });
-            } catch {
-              // Show setup form with saved fields
-            }
+            } catch { /* fall through to setup screen */ }
           }
         }
         if (!cancelled) setConfigStatus(status);
       } catch (e) {
         if (!cancelled) {
           setConfigStatus({
-            ready: false,
-            dataSource: null,
-            source: null,
-            bucket: null,
-            prefix: 'events',
-            region: 'us-east-1',
-            endpointUrl: null,
-            authMode: 'none',
-            baseUrl: null,
-            app: null,
-            cacheDir: null,
+            ready:             false,
+            dataSource:        null,
+            source:            null,
+            bucket:            null,
+            prefix:            'events',
+            region:            'us-east-1',
+            endpointUrl:       null,
+            authMode:          'none',
+            baseUrl:           null,
+            app:               null,
+            cacheDir:          null,
             starfishPublicRead: false,
-            sync: null,
-            error: e instanceof Error ? e.message : 'Could not reach the API server',
+            sync:              null,
+            error:             e instanceof Error ? e.message : 'Could not reach the API server',
           });
         }
       } finally {
         if (!cancelled) setConfigLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+
+    return () => { cancelled = true; };
   }, []);
 
   const handleConnected = useCallback((status: ConfigStatus) => {
     setConfigStatus(status);
-    setShowSettings(false);
-    setError(null);
+    setShowSetup(false);
   }, []);
 
-  const loadOverview = useCallback(async () => {
-    setLoadingOverview(true);
-    setError(null);
-    try {
-      const [ov, ts, dauData] = await Promise.all([
-        fetchOverview(range),
-        fetchTimeseries(range),
-        fetchDau(range),
-      ]);
-      setOverview(ov);
-      setTimeseries(ts);
-      setDau(dauData);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load overview');
-    } finally {
-      setLoadingOverview(false);
-    }
-  }, [range]);
+  const handleDisconnect = useCallback(() => {
+    setConfigStatus(null);
+    setShowSetup(true);
+    setConfigLoading(false);
+  }, []);
 
-  const loadBreakdowns = useCallback(async () => {
-    setLoadingBreakdowns(true);
-    setError(null);
-    try {
-      const [events, screens, errors] = await Promise.all([
-        fetchTopEvents(range),
-        fetchTopScreens(range),
-        fetchTopErrors(range),
-      ]);
-      setTopEvents(events);
-      setTopScreens(screens);
-      setTopErrors(errors);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load breakdowns');
-    } finally {
-      setLoadingBreakdowns(false);
-    }
-  }, [range]);
+  if (configLoading) return <FullScreenLoading />;
 
-  const loadRetention = useCallback(async () => {
-    setLoadingRetention(true);
-    setError(null);
-    try {
-      const data = await fetchRetention({ ...range, day: retentionDay });
-      setRetention(data);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load retention');
-    } finally {
-      setLoadingRetention(false);
-    }
-  }, [range, retentionDay]);
-
-  const dashboardReady = configStatus?.ready === true && !showSettings;
-
-  useEffect(() => {
-    if (!dashboardReady || tab !== 'overview') return;
-    void loadOverview();
-  }, [dashboardReady, tab, loadOverview]);
-
-  useEffect(() => {
-    if (!dashboardReady || tab !== 'breakdowns') return;
-    void loadBreakdowns();
-  }, [dashboardReady, tab, loadBreakdowns]);
-
-  useEffect(() => {
-    if (!dashboardReady || tab !== 'retention') return;
-    void loadRetention();
-  }, [dashboardReady, tab, loadRetention]);
-
-  if (configLoading) {
+  if (!configStatus?.ready || showSetup) {
     return (
-      <div className="setup-screen">
-        <div className="setup-card setup-loading">Loading…</div>
-      </div>
+      <DataSourcePanel
+        status={configStatus}
+        onConnected={handleConnected}
+      />
     );
   }
 
-  if (!configStatus?.ready || showSettings) {
-    return <DataSourcePanel status={configStatus} onConnected={handleConnected} />;
-  }
-
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'breakdowns', label: 'Breakdowns' },
-    { id: 'retention', label: 'Retention' },
-    { id: 'query', label: 'Query' },
-  ];
-
   return (
-    <div className="app">
-      <header className="header">
-        <div className="header-brand">
-          <h1>SunGlasses Analytics</h1>
-          <p className="subtitle">
-            {configStatus.source ? (
-              <>
-                <span className="source-label">{configStatus.source}</span>
-                <button
-                  type="button"
-                  className="link-btn"
-                  onClick={() => {
-                    void (async () => {
-                      await clearConfig();
-                      const next = await fetchConfigStatus();
-                      setConfigStatus(next);
-                      setShowSettings(true);
-                    })();
-                  }}
-                >
-                  Change connection
-                </button>
-              </>
-            ) : (
-              'Read-only analytics dashboard'
-            )}
-          </p>
-          <SyncBar status={configStatus} onSynced={setConfigStatus} />
-        </div>
-        <DateRangeControls range={range} onChange={setRange} />
-      </header>
-
-      <nav className="tabs">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={tab === t.id ? 'tab active' : 'tab'}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-
-      {error ? <div className="error-banner">{error}</div> : null}
-
-      <main className="main">
-        {tab === 'overview' && (
-          <>
-            <KpiCards data={overview} loading={loadingOverview} />
-            <TimeSeriesChart data={timeseries} loading={loadingOverview} />
-            <DauChart data={dau} loading={loadingOverview} />
-          </>
-        )}
-
-        {tab === 'breakdowns' && (
-          <div className="breakdowns-grid">
-            <TopEventsTable data={topEvents} loading={loadingBreakdowns} />
-            <ScreensTable data={topScreens} loading={loadingBreakdowns} />
-            <ErrorsTable data={topErrors} loading={loadingBreakdowns} />
-          </div>
-        )}
-
-        {tab === 'retention' && (
-          <RetentionTable
-            data={retention}
-            loading={loadingRetention}
-            day={retentionDay}
-            onDayChange={setRetentionDay}
-          />
-        )}
-
-        {tab === 'query' && <QueryConsole />}
-      </main>
-    </div>
+    <AppShell
+      status={configStatus}
+      onStatusChange={setConfigStatus}
+      onDisconnect={handleDisconnect}
+    />
   );
 }

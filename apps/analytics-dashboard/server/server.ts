@@ -38,12 +38,17 @@ import {
 } from './starfish-config-store.js';
 import { testStarfishConnection } from './starfish-client.js';
 import { computeSyncStats, syncParquetCache } from './starfish-sync.js';
+import type { FilterParams } from './queries.js';
 import {
+  getApps,
   getOverview,
   getTimeseries,
   getTopEvents,
   getTopScreens,
   getTopErrors,
+  getErrorGroups,
+  getErrorTimeseries,
+  getErrorDetail,
   getDau,
   getRetention,
 } from './queries.js';
@@ -69,20 +74,30 @@ interface RangeQuery {
   limit?: string;
   event?: string;
   day?: string;
+  app?: string;
+  level?: string;
+  handled?: string;  // 'true' | 'false'
+  error_type?: string;
+  error_message?: string;
 }
 
 type ConfigInput =
   | (S3ConfigInput & { source?: 'direct_s3' })
   | StarfishConfigInput;
 
-function parseRange(q: RangeQuery) {
+function parseRange(q: RangeQuery): FilterParams {
   return {
-    from: q.from,
-    to: q.to,
-    limit: q.limit ? parseInt(q.limit, 10) : undefined,
-    event: q.event,
-    day: q.day ? parseInt(q.day, 10) : undefined,
-  };
+    from:         q.from,
+    to:           q.to,
+    limit:        q.limit   ? parseInt(q.limit, 10)  : undefined,
+    event:        q.event,
+    day:          q.day     ? parseInt(q.day, 10)    : undefined,
+    app:          q.app,
+    level:        q.level,
+    handled:      q.handled === 'true' ? true : q.handled === 'false' ? false : undefined,
+    errorType:    q.error_type,
+    errorMessage: q.error_message,
+  } as FilterParams & { day?: number };
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -124,7 +139,7 @@ function formatStarfishError(raw: string, publicRead?: boolean): string {
   const firstLine = raw.split('\n').map((l) => l.trim()).find(Boolean) ?? raw;
   if (/401|403|unauthorized|forbidden/i.test(firstLine)) {
     if (publicRead) {
-      return 'Starfish access denied — the events collection may not allow public read/list. Enable admin cap-cert auth or set read_roles to include "public" on the sync server.';
+      return 'Starfish access denied — the events collection may not allow public read/list.';
     }
     return 'Starfish access denied — check admin cap-cert, device private key, and platform admin wiring on the sync server.';
   }
@@ -142,12 +157,7 @@ const app = Fastify({ logger: false });
 
 app.get('/api/health', async (_req, reply) => {
   const status = configStatusPayload();
-  return reply.send({
-    ok: true,
-    ready: status.ready,
-    dataSource: status.dataSource,
-    source: status.source,
-  });
+  return reply.send({ ok: true, ready: status.ready, dataSource: status.dataSource, source: status.source });
 });
 
 app.get('/api/config/status', async (_req, reply) => {
@@ -160,23 +170,16 @@ app.post<{ Body: ConfigInput }>('/api/config', async (req, reply) => {
 
   if (source === 'starfish') {
     const parsed = parseStarfishInput(body as StarfishConfigInput);
-    if (typeof parsed === 'string') {
-      return reply.code(400).send({ ok: false, error: parsed });
-    }
+    if (typeof parsed === 'string') return reply.code(400).send({ ok: false, error: parsed });
     try {
-      resetDb();
-      _starfishConfig = null;
-      _syncStats = null;
+      resetDb(); _starfishConfig = null; _syncStats = null;
       await clearStoredConfig();
       await applyStarfishConfig(parsed);
       await storeStarfishConfig(parsed);
       console.log(`[dashboard] Starfish configured → ${getS3Source()}`);
       return reply.send({ ok: true, ...configStatusPayload() });
     } catch (e) {
-      const message = formatStarfishError(
-        e instanceof Error ? e.message : 'Starfish connection failed',
-        parsed.publicRead,
-      );
+      const message = formatStarfishError(e instanceof Error ? e.message : 'Starfish connection failed', parsed.publicRead);
       markInitFailed(message);
       console.error('[dashboard] Starfish config failed:', message);
       return reply.code(400).send({ ok: false, ...configStatusPayload(), error: message });
@@ -184,24 +187,16 @@ app.post<{ Body: ConfigInput }>('/api/config', async (req, reply) => {
   }
 
   const parsed = parseConfigInput(body as S3ConfigInput);
-  if (typeof parsed === 'string') {
-    return reply.code(400).send({ ok: false, error: parsed });
-  }
-
+  if (typeof parsed === 'string') return reply.code(400).send({ ok: false, error: parsed });
   try {
-    resetDb();
-    _starfishConfig = null;
-    _syncStats = null;
+    resetDb(); _starfishConfig = null; _syncStats = null;
     await clearStoredStarfishConfig();
     await configureDirectS3(parsed.config, parsed.useIam);
     await storeConfig(parsed.config, parsed.useIam);
     console.log(`[dashboard] S3 configured → ${getS3Source()}`);
     return reply.send({ ok: true, ...configStatusPayload() });
   } catch (e) {
-    const message = formatS3Error(
-      e instanceof Error ? e.message : 'S3 connection failed',
-      parsed.config,
-    );
+    const message = formatS3Error(e instanceof Error ? e.message : 'S3 connection failed', parsed.config);
     markInitFailed(message);
     console.error('[dashboard] S3 config failed:', message);
     return reply.code(400).send({ ok: false, ...configStatusPayload(), error: message });
@@ -211,9 +206,7 @@ app.post<{ Body: ConfigInput }>('/api/config', async (req, reply) => {
 app.delete('/api/config', async (_req, reply) => {
   await clearStoredConfig();
   await clearStoredStarfishConfig();
-  resetDb();
-  _starfishConfig = null;
-  _syncStats = null;
+  resetDb(); _starfishConfig = null; _syncStats = null;
   console.log('[dashboard] configuration cleared');
   return reply.send({ ok: true, ...configStatusPayload() });
 });
@@ -227,26 +220,33 @@ app.post('/api/sync', async (_req, reply) => {
     await configureStarfish(_starfishConfig.cacheDir);
     return reply.send({ ok: true, ...configStatusPayload() });
   } catch (e) {
-    const message = formatStarfishError(
-      e instanceof Error ? e.message : 'Sync failed',
-      _starfishConfig.publicRead,
-    );
+    const message = formatStarfishError(e instanceof Error ? e.message : 'Sync failed', _starfishConfig.publicRead);
     return reply.code(400).send({ ok: false, ...configStatusPayload(), error: message });
   }
 });
 
 function requireDb(reply: { code: (n: number) => { send: (b: unknown) => unknown } }) {
   if (!isDbReady()) {
-    const status = configStatusPayload();
-    reply.code(503).send({
-      ok: false,
-      ...status,
-      error: 'Data backend is not configured',
-    });
+    reply.code(503).send({ ok: false, ...configStatusPayload(), error: 'Data backend is not configured' });
     return false;
   }
   return true;
 }
+
+// ── Analytics routes ────────────────────────────────────────────────────────
+
+app.get<{ Querystring: RangeQuery }>('/api/apps', async (req, reply) => {
+  if (!requireDb(reply)) return;
+  const err = validateDateRange(req.query);
+  if (err) return reply.code(400).send({ ok: false, error: err });
+  try {
+    const data = await getApps(parseRange(req.query));
+    return reply.send({ ok: true, data });
+  } catch (e) {
+    console.error('[dashboard] apps failed:', e instanceof Error ? e.message : e);
+    return reply.code(500).send({ ok: false, error: 'query failed' });
+  }
+});
 
 app.get<{ Querystring: RangeQuery }>('/api/overview', async (req, reply) => {
   if (!requireDb(reply)) return;
@@ -269,7 +269,7 @@ app.get<{ Querystring: RangeQuery }>('/api/timeseries', async (req, reply) => {
     const data = await getTimeseries(parseRange(req.query));
     return reply.send({ ok: true, data });
   } catch (e) {
-    console.error('[dashboard] dashboard timeseries failed:', e instanceof Error ? e.message : e);
+    console.error('[dashboard] timeseries failed:', e instanceof Error ? e.message : e);
     return reply.code(500).send({ ok: false, error: 'query failed' });
   }
 });
@@ -300,6 +300,7 @@ app.get<{ Querystring: RangeQuery }>('/api/screens/top', async (req, reply) => {
   }
 });
 
+// Legacy top-errors endpoint (kept for compatibility)
 app.get<{ Querystring: RangeQuery }>('/api/errors/top', async (req, reply) => {
   if (!requireDb(reply)) return;
   const err = validateDateRange(req.query);
@@ -309,6 +310,48 @@ app.get<{ Querystring: RangeQuery }>('/api/errors/top', async (req, reply) => {
     return reply.send({ ok: true, data });
   } catch (e) {
     console.error('[dashboard] errors/top failed:', e instanceof Error ? e.message : e);
+    return reply.code(500).send({ ok: false, error: 'query failed' });
+  }
+});
+
+app.get<{ Querystring: RangeQuery }>('/api/errors', async (req, reply) => {
+  if (!requireDb(reply)) return;
+  const err = validateDateRange(req.query);
+  if (err) return reply.code(400).send({ ok: false, error: err });
+  try {
+    const data = await getErrorGroups(parseRange(req.query));
+    return reply.send({ ok: true, data });
+  } catch (e) {
+    console.error('[dashboard] errors failed:', e instanceof Error ? e.message : e);
+    return reply.code(500).send({ ok: false, error: 'query failed' });
+  }
+});
+
+app.get<{ Querystring: RangeQuery }>('/api/errors/timeseries', async (req, reply) => {
+  if (!requireDb(reply)) return;
+  const err = validateDateRange(req.query);
+  if (err) return reply.code(400).send({ ok: false, error: err });
+  try {
+    const data = await getErrorTimeseries(parseRange(req.query));
+    return reply.send({ ok: true, data });
+  } catch (e) {
+    console.error('[dashboard] errors/timeseries failed:', e instanceof Error ? e.message : e);
+    return reply.code(500).send({ ok: false, error: 'query failed' });
+  }
+});
+
+app.get<{ Querystring: RangeQuery }>('/api/errors/detail', async (req, reply) => {
+  if (!requireDb(reply)) return;
+  const err = validateDateRange(req.query);
+  if (err) return reply.code(400).send({ ok: false, error: err });
+  if (!req.query.error_type && !req.query.error_message) {
+    return reply.code(400).send({ ok: false, error: 'error_type or error_message is required' });
+  }
+  try {
+    const data = await getErrorDetail(parseRange(req.query));
+    return reply.send({ ok: true, data });
+  } catch (e) {
+    console.error('[dashboard] errors/detail failed:', e instanceof Error ? e.message : e);
     return reply.code(500).send({ ok: false, error: 'query failed' });
   }
 });
@@ -331,13 +374,15 @@ app.get<{ Querystring: RangeQuery }>('/api/retention', async (req, reply) => {
   const err = validateDateRange(req.query);
   if (err) return reply.code(400).send({ ok: false, error: err });
   try {
-    const data = await getRetention(parseRange(req.query));
+    const data = await getRetention(parseRange(req.query) as FilterParams & { day?: number });
     return reply.send({ ok: true, data });
   } catch (e) {
     console.error('[dashboard] retention failed:', e instanceof Error ? e.message : e);
     return reply.code(500).send({ ok: false, error: 'query failed' });
   }
 });
+
+// ── Ad-hoc query ─────────────────────────────────────────────────────────────
 
 function serializeRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
   return rows.map((row) => {
@@ -352,43 +397,30 @@ function serializeRows(rows: Record<string, unknown>[]): Record<string, unknown>
 app.post<{ Body: { sql?: string } }>('/api/query', async (req, reply) => {
   if (!requireDb(reply)) return;
   const sql = req.body?.sql;
-  if (!sql || typeof sql !== 'string') {
-    return reply.code(400).send({ ok: false, error: 'sql is required' });
-  }
+  if (!sql || typeof sql !== 'string') return reply.code(400).send({ ok: false, error: 'sql is required' });
   if (!isReadOnlySql(sql)) {
-    return reply.code(400).send({
-      ok: false,
-      error: 'only single SELECT or WITH statements are allowed',
-    });
+    return reply.code(400).send({ ok: false, error: 'only single SELECT or WITH statements are allowed' });
   }
   try {
-    const rows = serializeRows(await queryRaw(sql));
+    const rows    = serializeRows(await queryRaw(sql));
     const columns = rows.length > 0 ? Object.keys(rows[0]!) : [];
     console.log(`[dashboard] ad-hoc query returned ${rows.length} row(s)`);
     return reply.send({ ok: true, columns, rows });
   } catch (e) {
     console.error('[dashboard] query failed:', e instanceof Error ? e.message : e);
-    return reply.code(400).send({
-      ok: false,
-      error: e instanceof Error ? e.message : 'query failed',
-    });
+    return reply.code(400).send({ ok: false, error: e instanceof Error ? e.message : 'query failed' });
   }
 });
 
 // ---------------------------------------------------------------------------
-// Static UI (production build)
+// Static UI
 // ---------------------------------------------------------------------------
 
 async function registerStatic() {
   if (!existsSync(DIST_DIR)) return;
-  await app.register(fastifyStatic, {
-    root: DIST_DIR,
-    prefix: '/',
-  });
+  await app.register(fastifyStatic, { root: DIST_DIR, prefix: '/' });
   app.setNotFoundHandler((req, reply) => {
-    if (req.url.startsWith('/api/')) {
-      return reply.code(404).send({ ok: false, error: 'not found' });
-    }
+    if (req.url.startsWith('/api/')) return reply.code(404).send({ ok: false, error: 'not found' });
     return reply.sendFile('index.html');
   });
 }
@@ -405,10 +437,7 @@ async function tryStoredStarfish(): Promise<boolean> {
     console.log(`[dashboard] Starfish ready from saved config → ${getS3Source()}`);
     return true;
   } catch (e) {
-    const message = formatStarfishError(
-      e instanceof Error ? e.message : 'Starfish connection failed',
-      stored.config.publicRead,
-    );
+    const message = formatStarfishError(e instanceof Error ? e.message : 'Starfish connection failed', stored.config.publicRead);
     markInitFailed(message);
     console.warn(`[dashboard] Saved Starfish config failed — ${message}`);
     return false;
@@ -423,10 +452,7 @@ async function tryStoredS3(): Promise<boolean> {
     console.log(`[dashboard] S3 ready from saved UI config → ${getS3Source()}`);
     return true;
   } catch (e) {
-    const message = formatS3Error(
-      e instanceof Error ? e.message : 'S3 connection failed',
-      stored.config,
-    );
+    const message = formatS3Error(e instanceof Error ? e.message : 'S3 connection failed', stored.config);
     markInitFailed(message);
     console.warn(`[dashboard] Saved S3 config failed — ${message}`);
     return false;
@@ -440,10 +466,7 @@ async function tryEnvStarfish(): Promise<void> {
     await applyStarfishConfig(env);
     console.log(`[dashboard] Starfish ready from env → ${getS3Source()}`);
   } catch (e) {
-    const message = formatStarfishError(
-      e instanceof Error ? e.message : 'Starfish connection failed',
-      env.publicRead,
-    );
+    const message = formatStarfishError(e instanceof Error ? e.message : 'Starfish connection failed', env.publicRead);
     markInitFailed(message);
     console.warn(`[dashboard] Starfish not ready from .env — ${message}`);
   }
@@ -456,10 +479,7 @@ async function tryEnvS3(): Promise<void> {
     await configureDirectS3(env, !env.accessKeyId && !env.secretAccessKey);
     console.log(`[dashboard] S3 ready from env → ${getS3Source()}`);
   } catch (e) {
-    const message = formatS3Error(
-      e instanceof Error ? e.message : 'S3 connection failed',
-      env,
-    );
+    const message = formatS3Error(e instanceof Error ? e.message : 'S3 connection failed', env);
     markInitFailed(message);
     console.warn(`[dashboard] S3 not ready from .env — ${message}`);
   }
@@ -468,13 +488,8 @@ async function tryEnvS3(): Promise<void> {
 async function bootstrap(): Promise<void> {
   if (await tryStoredStarfish()) return;
   if (await tryStoredS3()) return;
-  if (process.env['STARFISH_CONFIGURE_FROM_ENV'] === 'true') {
-    await tryEnvStarfish();
-    return;
-  }
-  if (envAutoConfigureEnabled()) {
-    await tryEnvS3();
-  }
+  if (process.env['STARFISH_CONFIGURE_FROM_ENV'] === 'true') { await tryEnvStarfish(); return; }
+  if (envAutoConfigureEnabled()) await tryEnvS3();
 }
 
 async function start() {

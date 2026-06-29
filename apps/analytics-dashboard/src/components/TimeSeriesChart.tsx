@@ -9,6 +9,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { TimeseriesRow } from '../api';
+import { useChartTheme } from '../hooks/useChartTheme';
+import { Empty } from './ui/Empty';
 
 interface Props {
   data: TimeseriesRow[];
@@ -16,38 +18,40 @@ interface Props {
 }
 
 export function TimeSeriesChart({ data, loading }: Props) {
+  const t = useChartTheme();
+
   if (loading) {
-    return <div className="chart-placeholder">Loading…</div>;
+    return <div className="skeleton rounded-xl h-[280px]" />;
   }
-  if (data.length === 0) {
-    return <div className="chart-placeholder">No data for this range.</div>;
-  }
+  if (data.length === 0) return <Empty />;
 
   return (
-    <div className="chart-wrap">
-      <h3 className="section-title">Event volume</h3>
-      <ResponsiveContainer width="100%" height={280}>
-        <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-          <XAxis dataKey="dt" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 11 }} />
+    <div className="rounded-xl border border-border bg-card shadow-sm p-5">
+      <p className="text-sm font-semibold text-foreground mb-4">Event volume</p>
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={data} margin={{ top: 4, right: 12, left: -8, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={t.border} />
+          <XAxis dataKey="dt" tick={{ fontSize: 11, fill: t.muted }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: t.muted }} tickLine={false} axisLine={false} width={40} />
           <Tooltip />
-          <Legend />
+          <Legend iconSize={8} wrapperStyle={{ fontSize: 12 }} />
           <Line
             type="monotone"
             dataKey="events"
             name="Events"
-            stroke="#2563eb"
+            stroke={t.chart1}
             strokeWidth={2}
             dot={false}
+            activeDot={{ r: 4 }}
           />
           <Line
             type="monotone"
             dataKey="unique_devices"
             name="Devices"
-            stroke="#16a34a"
+            stroke={t.chart2}
             strokeWidth={2}
             dot={false}
+            activeDot={{ r: 4 }}
           />
         </LineChart>
       </ResponsiveContainer>

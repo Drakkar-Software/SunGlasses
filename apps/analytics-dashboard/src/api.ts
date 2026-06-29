@@ -1,8 +1,14 @@
+// ── Date range ───────────────────────────────────────────────────────────────
+
 export interface DateRangeParams {
   from?: string;
   to?: string;
   limit?: number;
+  /** Filter events to a specific app (context.app.name). Undefined = all apps. */
+  app?: string;
 }
+
+// ── Config types ─────────────────────────────────────────────────────────────
 
 export type DataSourceKind = 'direct_s3' | 'starfish' | null;
 
@@ -102,12 +108,22 @@ export interface ConfigStatus {
   error: string | null;
 }
 
+// ── Row types ─────────────────────────────────────────────────────────────────
+
+export interface AppInfo {
+  app: string | null;
+  events: number;
+  last_seen: string | null;
+}
+
 export interface OverviewData {
-  total_events: number;
-  unique_devices: number;
-  distinct_events: number;
-  latest_dt: string | null;
-  latest_dau: number;
+  total_events:           number;
+  unique_devices:         number;
+  distinct_events:        number;
+  latest_dt:              string | null;
+  latest_dau:             number;
+  total_errors:           number;
+  error_affected_devices: number;
 }
 
 export interface TimeseriesRow {
@@ -136,17 +152,53 @@ export interface TopErrorRow {
   affected_devices: number;
 }
 
+export interface ErrorGroupRow {
+  error_type:       string | null;
+  message:          string | null;
+  level:            string | null;
+  handled:          string | null;
+  occurrences:      number;
+  affected_devices: number;
+  first_seen:       string | null;
+  last_seen:        string | null;
+}
+
+export interface ErrorTimeseriesRow {
+  error_type: string | null;
+  message:    string | null;
+  dt:         string;
+  occurrences:number;
+}
+
+export interface ErrorDetailData {
+  timeseries:  { dt: string; occurrences: number }[];
+  stacks:      string[];
+  breakdowns:  {
+    app_version:      string | null;
+    platform:         string | null;
+    occurrences:      number;
+    affected_devices: number;
+  }[];
+}
+
 export interface DauRow {
   dt: string;
   dau: number;
 }
 
 export interface RetentionRow {
-  cohort_date: string;
-  cohort_size: number;
-  retained: number;
+  cohort_date:   string;
+  cohort_size:   number;
+  retained:      number;
   retention_pct: number;
 }
+
+export interface QueryResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+}
+
+// ── HTTP helpers ──────────────────────────────────────────────────────────────
 
 interface ApiResponse<T> {
   ok: boolean;
@@ -154,7 +206,7 @@ interface ApiResponse<T> {
   error?: string;
 }
 
-function qs(params: Record<string, string | number | undefined>): string {
+function qs(params: Record<string, string | number | boolean | undefined>): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== '') parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
@@ -162,17 +214,39 @@ function qs(params: Record<string, string | number | undefined>): string {
   return parts.length > 0 ? `?${parts.join('&')}` : '';
 }
 
-async function get<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
-  const res = await fetch(`/api${path}${qs(params)}`);
+async function get<T>(path: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> {
+  const res  = await fetch(`/api${path}${qs(params)}`);
   const body = (await res.json()) as ApiResponse<T>;
-  if (!res.ok || !body.ok) {
-    throw new Error(body.error ?? `Request failed (${res.status})`);
-  }
+  if (!res.ok || !body.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
   return body.data as T;
 }
 
-function toParams(range: DateRangeParams & { day?: number }): Record<string, string | number | undefined> {
-  return { from: range.from, to: range.to, limit: range.limit, day: range.day };
+function toParams(
+  range: DateRangeParams & {
+    day?: number;
+    level?: string;
+    handled?: boolean;
+    error_type?: string;
+    error_message?: string;
+  },
+): Record<string, string | number | boolean | undefined> {
+  return {
+    from:          range.from,
+    to:            range.to,
+    limit:         range.limit,
+    app:           range.app,
+    day:           range.day,
+    level:         range.level,
+    handled:       range.handled,
+    error_type:    range.error_type,
+    error_message: range.error_message,
+  };
+}
+
+// ── Fetch functions ───────────────────────────────────────────────────────────
+
+export function fetchApps(range: DateRangeParams) {
+  return get<AppInfo[]>('/apps', toParams(range));
 }
 
 export function fetchOverview(range: DateRangeParams) {
@@ -191,8 +265,25 @@ export function fetchTopScreens(range: DateRangeParams) {
   return get<TopScreenRow[]>('/screens/top', { ...toParams(range), limit: range.limit ?? 20 });
 }
 
+/** @deprecated Use fetchErrorGroups for the errors section */
 export function fetchTopErrors(range: DateRangeParams) {
   return get<TopErrorRow[]>('/errors/top', { ...toParams(range), limit: range.limit ?? 20 });
+}
+
+export function fetchErrorGroups(
+  range: DateRangeParams & { level?: string; handled?: boolean },
+) {
+  return get<ErrorGroupRow[]>('/errors', toParams(range));
+}
+
+export function fetchErrorTimeseries(range: DateRangeParams) {
+  return get<ErrorTimeseriesRow[]>('/errors/timeseries', toParams(range));
+}
+
+export function fetchErrorDetail(
+  range: DateRangeParams & { error_type?: string; error_message?: string },
+) {
+  return get<ErrorDetailData>('/errors/detail', toParams(range));
 }
 
 export function fetchDau(range: DateRangeParams) {
@@ -200,30 +291,71 @@ export function fetchDau(range: DateRangeParams) {
 }
 
 export function fetchRetention(range: DateRangeParams & { day?: number }) {
-  return get<RetentionRow[]>('/retention', {
-    ...toParams(range),
-    limit: range.limit ?? 30,
-    day: range.day ?? 7,
-  });
-}
-
-export interface QueryResult {
-  columns: string[];
-  rows: Record<string, unknown>[];
+  return get<RetentionRow[]>('/retention', { ...toParams(range), limit: range.limit ?? 30 });
 }
 
 export async function runQuery(sql: string): Promise<QueryResult> {
-  const res = await fetch('/api/query', {
+  const res  = await fetch('/api/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sql }),
   });
   const body = await res.json();
-  if (!res.ok || !body.ok) {
-    throw new Error(body.error ?? `Query failed (${res.status})`);
-  }
+  if (!res.ok || !body.ok) throw new Error(body.error ?? `Query failed (${res.status})`);
   return { columns: body.columns as string[], rows: body.rows as Record<string, unknown>[] };
 }
+
+// ── Config helpers ────────────────────────────────────────────────────────────
+
+function parseConfigStatus(body: Record<string, unknown>): ConfigStatus {
+  return {
+    ready:              Boolean(body.ready),
+    dataSource:         (body.dataSource as DataSourceKind) ?? null,
+    source:             (body.source as string | null) ?? null,
+    bucket:             (body.bucket as string | null) ?? null,
+    prefix:             (body.prefix as string) ?? 'events',
+    region:             (body.region as string) ?? 'us-east-1',
+    endpointUrl:        (body.endpointUrl as string | null) ?? null,
+    authMode:           (body.authMode as ConfigStatus['authMode']) ?? 'none',
+    baseUrl:            (body.baseUrl as string | null) ?? null,
+    app:                (body.app as string | null) ?? null,
+    cacheDir:           (body.cacheDir as string | null) ?? null,
+    starfishPublicRead: Boolean(body.starfishPublicRead),
+    sync:               (body.sync as SyncStats | null) ?? null,
+    error:              (body.error as string | null) ?? null,
+  };
+}
+
+export async function fetchConfigStatus(): Promise<ConfigStatus> {
+  const res  = await fetch('/api/config/status');
+  const body = await res.json();
+  if (!res.ok || !body.ok) throw new Error(body.error ?? `Config status failed (${res.status})`);
+  return parseConfigStatus(body);
+}
+
+export async function saveConfig(input: ConfigInput): Promise<ConfigStatus> {
+  const res  = await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const body = await res.json();
+  if (!res.ok || !body.ok) throw new Error(body.error ?? `Configuration failed (${res.status})`);
+  return parseConfigStatus(body);
+}
+
+export async function clearConfig(): Promise<void> {
+  await fetch('/api/config', { method: 'DELETE' });
+}
+
+export async function triggerSync(): Promise<ConfigStatus> {
+  const res  = await fetch('/api/sync', { method: 'POST' });
+  const body = await res.json();
+  if (!res.ok || !body.ok) throw new Error(body.error ?? `Sync failed (${res.status})`);
+  return parseConfigStatus(body);
+}
+
+// ── Date utils ────────────────────────────────────────────────────────────────
 
 export function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -235,74 +367,22 @@ export function daysAgo(n: number): string {
   return formatDate(d);
 }
 
-function parseConfigStatus(body: Record<string, unknown>): ConfigStatus {
-  return {
-    ready: Boolean(body.ready),
-    dataSource: (body.dataSource as DataSourceKind) ?? null,
-    source: (body.source as string | null) ?? null,
-    bucket: (body.bucket as string | null) ?? null,
-    prefix: (body.prefix as string) ?? 'events',
-    region: (body.region as string) ?? 'us-east-1',
-    endpointUrl: (body.endpointUrl as string | null) ?? null,
-    authMode: (body.authMode as ConfigStatus['authMode']) ?? 'none',
-    baseUrl: (body.baseUrl as string | null) ?? null,
-    app: (body.app as string | null) ?? null,
-    cacheDir: (body.cacheDir as string | null) ?? null,
-    starfishPublicRead: Boolean(body.starfishPublicRead),
-    sync: (body.sync as SyncStats | null) ?? null,
-    error: (body.error as string | null) ?? null,
-  };
+export function relativeTime(iso: string | null): string {
+  if (!iso) return '—';
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60)   return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60)   return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24)   return `${h}h ago`;
+  const day = Math.floor(h / 24);
+  return `${day}d ago`;
 }
 
-export async function fetchConfigStatus(): Promise<ConfigStatus> {
-  const res = await fetch('/api/config/status');
-  const body = await res.json();
-  if (!res.ok || !body.ok) {
-    throw new Error(body.error ?? `Config status failed (${res.status})`);
-  }
-  return parseConfigStatus(body);
-}
-
-export async function saveConfig(input: ConfigInput): Promise<ConfigStatus> {
-  const res = await fetch('/api/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  const body = await res.json();
-  if (!res.ok || !body.ok) {
-    throw new Error(body.error ?? `Configuration failed (${res.status})`);
-  }
-  return parseConfigStatus(body);
-}
-
-export async function clearConfig(): Promise<void> {
-  await fetch('/api/config', { method: 'DELETE' });
-}
-
-export async function triggerSync(): Promise<ConfigStatus> {
-  const res = await fetch('/api/sync', { method: 'POST' });
-  const body = await res.json();
-  if (!res.ok || !body.ok) {
-    throw new Error(body.error ?? `Sync failed (${res.status})`);
-  }
-  return parseConfigStatus(body);
-}
-
-/** @deprecated Use saveConfig */
-export const saveS3Config = saveConfig;
-
-/** @deprecated Use clearConfig */
-export const clearS3Config = clearConfig;
-
-/** @deprecated Use loadBrowserConfig */
-export const loadBrowserS3Config = loadBrowserConfig;
-
-/** @deprecated Use saveBrowserConfig */
-export const saveBrowserS3Config = saveBrowserConfig;
-
-/** @deprecated Use ConfigStatus */
-export type S3ConfigStatus = ConfigStatus;
-
-/** @deprecated Use ConfigInput */
-export type { S3ConfigInput as LegacyS3ConfigInput };
+// ── Deprecated aliases ────────────────────────────────────────────────────────
+/** @deprecated */ export const saveS3Config        = saveConfig;
+/** @deprecated */ export const clearS3Config       = clearConfig;
+/** @deprecated */ export const loadBrowserS3Config = loadBrowserConfig;
+/** @deprecated */ export const saveBrowserS3Config = saveBrowserConfig;
+/** @deprecated */ export type S3ConfigStatus = ConfigStatus;

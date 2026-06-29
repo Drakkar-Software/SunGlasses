@@ -15,35 +15,31 @@ interface Props {
 type Mode = 'starfish' | 'direct_s3';
 
 export function DataSourcePanel({ status, onConnected }: Props) {
-  const browser = loadBrowserConfig();
+  const browser      = loadBrowserConfig();
   const initialMode: Mode =
     status?.dataSource === 'starfish' || browser?.mode === 'starfish' ? 'starfish' : 'direct_s3';
 
   const [mode, setMode] = useState<Mode>(initialMode);
 
   // S3 fields
-  const [s3Bucket, setS3Bucket] = useState(status?.bucket ?? browser?.s3Bucket ?? '');
-  const [s3Prefix, setS3Prefix] = useState(status?.prefix ?? browser?.s3Prefix ?? 'events');
-  const [awsRegion, setAwsRegion] = useState(status?.region ?? browser?.awsRegion ?? 'us-east-1');
-  const [accessKeyId, setAccessKeyId] = useState(browser?.accessKeyId ?? '');
-  const [secretAccessKey, setSecretAccessKey] = useState(browser?.secretAccessKey ?? '');
-  const [endpointUrl, setEndpointUrl] = useState(status?.endpointUrl ?? browser?.endpointUrl ?? '');
-  const [useIam, setUseIam] = useState(
-    status?.authMode === 'iam' || browser?.useIam === true,
-  );
+  const [s3Bucket,         setS3Bucket]         = useState(status?.bucket     ?? browser?.s3Bucket     ?? '');
+  const [s3Prefix,         setS3Prefix]         = useState(status?.prefix     ?? browser?.s3Prefix     ?? 'events');
+  const [awsRegion,        setAwsRegion]        = useState(status?.region     ?? browser?.awsRegion    ?? 'us-east-1');
+  const [accessKeyId,      setAccessKeyId]      = useState(browser?.accessKeyId      ?? '');
+  const [secretAccessKey,  setSecretAccessKey]  = useState(browser?.secretAccessKey  ?? '');
+  const [endpointUrl,      setEndpointUrl]      = useState(status?.endpointUrl ?? browser?.endpointUrl ?? '');
+  const [useIam,           setUseIam]           = useState(status?.authMode === 'iam' || browser?.useIam === true);
 
   // Starfish fields
-  const [baseUrl, setBaseUrl] = useState(status?.baseUrl ?? browser?.baseUrl ?? '');
-  const [app, setApp] = useState(status?.app ?? browser?.app ?? '');
-  const [publicRead, setPublicRead] = useState(
-    status?.starfishPublicRead ?? browser?.publicRead === true,
-  );
-  const [capJson, setCapJson] = useState(browser?.capJson ?? '');
+  const [baseUrl,      setBaseUrl]      = useState(status?.baseUrl    ?? browser?.baseUrl    ?? '');
+  const [app,          setApp]          = useState(status?.app        ?? browser?.app        ?? '');
+  const [publicRead,   setPublicRead]   = useState(status?.starfishPublicRead ?? browser?.publicRead === true);
+  const [capJson,      setCapJson]      = useState(browser?.capJson      ?? '');
   const [devEdPrivHex, setDevEdPrivHex] = useState(browser?.devEdPrivHex ?? '');
 
-  const [remember, setRemember] = useState(browser?.remember === true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(status?.error ?? null);
+  const [remember,    setRemember]    = useState(browser?.remember === true);
+  const [submitting,  setSubmitting]  = useState(false);
+  const [error,       setError]       = useState<string | null>(status?.error ?? null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -52,46 +48,20 @@ export function DataSourcePanel({ status, onConnected }: Props) {
 
     let input: ConfigInput;
     if (mode === 'starfish') {
-      input = {
-        source: 'starfish',
-        baseUrl,
-        app,
-        publicRead,
-      };
-      if (!publicRead) {
-        input.cap = capJson;
-        input.devEdPrivHex = devEdPrivHex;
-      }
+      input = { source: 'starfish', baseUrl, app, publicRead };
+      if (!publicRead) { input.cap = capJson; input.devEdPrivHex = devEdPrivHex; }
       saveBrowserConfig({
-        mode: 'starfish',
-        baseUrl,
-        app,
-        publicRead,
-        capJson: remember && !publicRead ? capJson : undefined,
+        mode: 'starfish', baseUrl, app, publicRead,
+        capJson:      remember && !publicRead ? capJson      : undefined,
         devEdPrivHex: remember && !publicRead ? devEdPrivHex : undefined,
         remember,
       });
     } else {
-      input = {
-        source: 'direct_s3',
-        s3Bucket,
-        s3Prefix,
-        awsRegion,
-        endpointUrl: endpointUrl || undefined,
-        useIam,
-      };
-      if (!useIam) {
-        input.accessKeyId = accessKeyId;
-        input.secretAccessKey = secretAccessKey;
-      }
+      input = { source: 'direct_s3', s3Bucket, s3Prefix, awsRegion, endpointUrl: endpointUrl || undefined, useIam };
+      if (!useIam) { input.accessKeyId = accessKeyId; input.secretAccessKey = secretAccessKey; }
       saveBrowserConfig({
-        mode: 'direct_s3',
-        s3Bucket,
-        s3Prefix,
-        awsRegion,
-        endpointUrl,
-        useIam,
-        accessKeyId: remember ? accessKeyId : undefined,
+        mode: 'direct_s3', s3Bucket, s3Prefix, awsRegion, endpointUrl, useIam,
+        accessKeyId:     remember ? accessKeyId     : undefined,
         secretAccessKey: remember ? secretAccessKey : undefined,
         remember,
       });
@@ -108,223 +78,232 @@ export function DataSourcePanel({ status, onConnected }: Props) {
   }
 
   return (
-    <div className="setup-screen">
-      <div className="setup-card">
-        <h1>SunGlasses Analytics</h1>
-        <p className="setup-lead">
-          Connect to your analytics data. Use <strong>Starfish</strong> when S3/Garage is not
-          publicly reachable (recommended for Infra sync). Use <strong>Direct S3</strong> for
-          local MinIO or when DuckDB can reach the bucket directly.
-        </p>
-
-        <div className="source-tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            className={mode === 'starfish' ? 'source-tab active' : 'source-tab'}
-            aria-selected={mode === 'starfish'}
-            onClick={() => setMode('starfish')}
-          >
-            Starfish
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className={mode === 'direct_s3' ? 'source-tab active' : 'source-tab'}
-            aria-selected={mode === 'direct_s3'}
-            onClick={() => setMode('direct_s3')}
-          >
-            Direct S3
-          </button>
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <div className="w-full max-w-lg">
+        {/* Brand */}
+        <div className="flex items-center gap-2.5 mb-8">
+          <svg aria-hidden="true" className="w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178Z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+          </svg>
+          <span className="text-xl font-bold text-foreground tracking-tight">SunGlasses Analytics</span>
         </div>
 
-        {error ? <div className="error-banner">{error}</div> : null}
+        <div className="rounded-2xl border border-border bg-card shadow-lg p-6">
+          <p className="text-sm text-muted-fg mb-5">
+            Connect to your analytics data. Use <strong className="text-foreground">Starfish</strong> when S3 is not
+            publicly reachable. Use <strong className="text-foreground">Direct S3</strong> for MinIO or direct bucket access.
+          </p>
 
-        <form className="setup-form" onSubmit={handleSubmit}>
-          {mode === 'starfish' ? (
-            <>
-              <fieldset className="form-section">
-                <legend>Starfish sync</legend>
-                <label className="form-field">
-                  <span>Sync base URL *</span>
+          {/* Mode tabs */}
+          <div role="tablist" className="flex rounded-lg border border-border bg-muted p-1 mb-5">
+            {(['starfish', 'direct_s3'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+                  mode === m
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-fg hover:text-foreground'
+                }`}
+              >
+                {m === 'starfish' ? 'Starfish' : 'Direct S3'}
+              </button>
+            ))}
+          </div>
+
+          {error ? (
+            <div className="rounded-lg border border-destructive/40 bg-destructive-bg p-3 mb-4 text-sm text-destructive">
+              {error}
+            </div>
+          ) : null}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'starfish' ? (
+              <>
+                <Field label="Sync base URL" required>
                   <input
-                    type="url"
-                    required
-                    value={baseUrl}
+                    type="url" required value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
                     placeholder="https://sync.example.com/v1/analytics"
                     autoComplete="off"
+                    className={inputCls}
                   />
-                </label>
-                <label className="form-field">
-                  <span>App slug *</span>
+                </Field>
+                <Field label="App slug" required>
                   <input
-                    type="text"
-                    required
-                    value={app}
+                    type="text" required value={app}
                     onChange={(e) => setApp(e.target.value)}
                     placeholder="octochat"
                     autoComplete="off"
+                    className={inputCls}
                   />
-                </label>
-              </fieldset>
-
-              <fieldset className="form-section">
-                <legend>Authentication</legend>
-                <label className="form-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={publicRead}
-                    onChange={(e) => setPublicRead(e.target.checked)}
-                  />
-                  <span>Public read — no cap-cert (collection must allow anonymous list/pull)</span>
-                </label>
-
+                </Field>
+                <CheckField
+                  checked={publicRead}
+                  onChange={setPublicRead}
+                  label="Public read — no cap-cert"
+                />
                 {!publicRead ? (
                   <>
-                    <label className="form-field">
-                      <span>Cap certificate JSON *</span>
+                    <Field label="Cap certificate JSON" required>
                       <textarea
-                        required
-                        rows={6}
-                        value={capJson}
+                        required rows={4} value={capJson}
                         onChange={(e) => setCapJson(e.target.value)}
                         placeholder='{"v":1,"kind":"device",...}'
                         spellCheck={false}
+                        className={`${inputCls} font-mono text-xs`}
                       />
-                    </label>
-                    <label className="form-field">
-                      <span>Device Ed25519 private key (hex) *</span>
+                    </Field>
+                    <Field label="Device Ed25519 private key (hex)" required>
                       <input
-                        type="password"
-                        required
-                        value={devEdPrivHex}
+                        type="password" required value={devEdPrivHex}
                         onChange={(e) => setDevEdPrivHex(e.target.value)}
                         autoComplete="new-password"
+                        className={inputCls}
                       />
-                    </label>
+                    </Field>
                   </>
                 ) : null}
-              </fieldset>
-            </>
-          ) : (
-            <>
-              <fieldset className="form-section">
-                <legend>Storage</legend>
-                <label className="form-field">
-                  <span>S3 bucket *</span>
+              </>
+            ) : (
+              <>
+                <Field label="S3 bucket" required>
                   <input
-                    type="text"
-                    required
-                    value={s3Bucket}
+                    type="text" required value={s3Bucket}
                     onChange={(e) => setS3Bucket(e.target.value)}
                     placeholder="my-analytics-bucket"
                     autoComplete="off"
+                    className={inputCls}
                   />
-                </label>
-                <label className="form-field">
-                  <span>Key prefix</span>
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Key prefix">
+                    <input
+                      type="text" value={s3Prefix}
+                      onChange={(e) => setS3Prefix(e.target.value)}
+                      placeholder="events"
+                      autoComplete="off"
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Region">
+                    <input
+                      type="text" value={awsRegion}
+                      onChange={(e) => setAwsRegion(e.target.value)}
+                      placeholder="us-east-1"
+                      autoComplete="off"
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+                <Field label="Custom endpoint (MinIO / R2 / Cloudflare)">
                   <input
-                    type="text"
-                    value={s3Prefix}
-                    onChange={(e) => setS3Prefix(e.target.value)}
-                    placeholder="events"
-                    autoComplete="off"
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Region</span>
-                  <input
-                    type="text"
-                    value={awsRegion}
-                    onChange={(e) => setAwsRegion(e.target.value)}
-                    placeholder="us-east-1"
-                    autoComplete="off"
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Custom endpoint (MinIO / R2)</span>
-                  <input
-                    type="url"
-                    value={endpointUrl}
+                    type="url" value={endpointUrl}
                     onChange={(e) => setEndpointUrl(e.target.value)}
                     placeholder="http://localhost:9000"
                     autoComplete="off"
+                    className={inputCls}
                   />
-                </label>
-              </fieldset>
-
-              <fieldset className="form-section">
-                <legend>Credentials</legend>
-                <label className="form-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={useIam}
-                    onChange={(e) => setUseIam(e.target.checked)}
-                  />
-                  <span>Use IAM role / instance profile (no access keys)</span>
-                </label>
-
+                </Field>
+                <CheckField
+                  checked={useIam}
+                  onChange={setUseIam}
+                  label="Use IAM role / instance profile (no access keys)"
+                />
                 {!useIam ? (
-                  <>
-                    <label className="form-field">
-                      <span>Access key ID *</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Access key ID" required>
                       <input
-                        type="text"
-                        required={!useIam}
-                        value={accessKeyId}
+                        type="text" required={!useIam} value={accessKeyId}
                         onChange={(e) => setAccessKeyId(e.target.value)}
                         autoComplete="off"
+                        className={inputCls}
                       />
-                    </label>
-                    <label className="form-field">
-                      <span>Secret access key *</span>
+                    </Field>
+                    <Field label="Secret access key" required>
                       <input
-                        type="password"
-                        required={!useIam}
-                        value={secretAccessKey}
+                        type="password" required={!useIam} value={secretAccessKey}
                         onChange={(e) => setSecretAccessKey(e.target.value)}
                         autoComplete="new-password"
+                        className={inputCls}
                       />
-                    </label>
-                  </>
+                    </Field>
+                  </div>
                 ) : null}
-              </fieldset>
-            </>
-          )}
+              </>
+            )}
 
-          <label className="form-checkbox">
-            <input
-              type="checkbox"
+            <CheckField
               checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
+              onChange={setRemember}
+              label="Remember credentials in this browser tab (cleared when the tab closes)"
             />
-            <span>Remember in this browser (session only — cleared when the tab closes)</span>
-          </label>
 
-          <button type="submit" className="primary-btn setup-submit" disabled={submitting}>
-            {submitting ? 'Connecting…' : mode === 'starfish' ? 'Connect via Starfish' : 'Connect to S3'}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-fg hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-100"
+            >
+              {submitting ? 'Connecting…' : mode === 'starfish' ? 'Connect via Starfish' : 'Connect to S3'}
+            </button>
+          </form>
 
-        <p className="setup-hint">
-          Settings are sent to this dashboard server and stored in{' '}
-          <code>{mode === 'starfish' ? '.starfish-config.local.json' : '.s3-config.local.json'}</code>{' '}
-          (gitignored). Starfish mode caches Parquet under <code>.parquet-cache/</code>.
-        </p>
+          <p className="mt-4 text-xs text-muted-fg">
+            Settings are stored in <code className="font-mono">{mode === 'starfish' ? '.starfish-config.local.json' : '.s3-config.local.json'}</code> on the server (gitignored).
+          </p>
+        </div>
       </div>
     </div>
   );
 }
 
+// ── Small helpers ─────────────────────────────────────────────────────────────
+
+const inputCls =
+  'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-fg/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary';
+
+function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-foreground">
+        {label}{required ? <span className="text-destructive ml-0.5" aria-hidden="true">*</span> : null}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function CheckField({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <label className="flex items-start gap-2.5 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 rounded border-border text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      />
+      <span className="text-sm text-foreground">{label}</span>
+    </label>
+  );
+}
+
+// ── SyncBar ───────────────────────────────────────────────────────────────────
+
 export function SyncBar({
   status,
   onSynced,
+  compact,
 }: {
   status: ConfigStatus;
   onSynced: (next: ConfigStatus) => void;
+  compact?: boolean;
 }) {
-  const [syncing, setSyncing] = useState(false);
+  const [syncing,   setSyncing]   = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
   if (status.dataSource !== 'starfish') return null;
@@ -342,27 +321,47 @@ export function SyncBar({
     }
   }
 
-  const sync = status.sync;
+  const sync  = status.sync;
   const label = sync
-    ? `${sync.totalFiles} file(s) · ${formatBytes(sync.cacheBytes)}`
+    ? `${sync.totalFiles} file${sync.totalFiles !== 1 ? 's' : ''} · ${formatBytes(sync.cacheBytes)}`
     : 'No sync yet';
 
+  if (compact) {
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[0.6875rem] text-sidebar-fg truncate">{label}</span>
+        <button
+          type="button"
+          disabled={syncing}
+          onClick={() => void handleSync()}
+          aria-label="Refresh data from Starfish"
+          className="shrink-0 text-[0.6875rem] text-sidebar-active hover:underline disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sidebar-active rounded"
+        >
+          {syncing ? 'Syncing…' : 'Refresh'}
+        </button>
+        {syncError ? <span className="text-[0.6875rem] text-destructive truncate">{syncError}</span> : null}
+      </div>
+    );
+  }
+
   return (
-    <div className="sync-bar">
-      <span className="sync-meta">
-        {label}
-        {sync?.lastSyncAt ? ` · last ${new Date(sync.lastSyncAt).toLocaleString()}` : ''}
-      </span>
-      <button type="button" className="link-btn" disabled={syncing} onClick={() => void handleSync()}>
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2">
+      <span className="text-xs text-muted-fg flex-1">{label}</span>
+      <button
+        type="button"
+        disabled={syncing}
+        onClick={() => void handleSync()}
+        className="text-xs font-medium text-primary hover:text-primary-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded"
+      >
         {syncing ? 'Refreshing…' : 'Refresh data'}
       </button>
-      {syncError ? <span className="sync-error">{syncError}</span> : null}
+      {syncError ? <span className="text-xs text-destructive">{syncError}</span> : null}
     </div>
   );
 }
 
 function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024)              return `${n} B`;
+  if (n < 1024 * 1024)      return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }

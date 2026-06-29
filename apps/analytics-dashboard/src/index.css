@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+/* ── Dark mode variant ──────────────────────────────────────────────────── */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Design tokens ──────────────────────────────────────────────────────── */
+@theme {
+  /* Semantic surface palette */
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-card:       #ffffff;
+  --color-card-fg:    #0f172a;
+  --color-muted:      #f1f5f9;
+  --color-muted-fg:   #64748b;
+  --color-border:     #e2e8f0;
+
+  /* Interactive */
+  --color-primary:    #3b82f6;
+  --color-primary-fg: #ffffff;
+  --color-primary-hover: #2563eb;
+
+  /* Status */
+  --color-destructive:    #ef4444;
+  --color-destructive-bg: #fef2f2;
+  --color-warning:        #f59e0b;
+  --color-warning-bg:     #fffbeb;
+  --color-success:        #10b981;
+
+  /* Sidebar (dark in both themes) */
+  --color-sidebar:    #0f172a;
+  --color-sidebar-fg: #cbd5e1;
+  --color-sidebar-active: #3b82f6;
+  --color-sidebar-active-bg: rgba(59,130,246,0.12);
+
+  /* Chart series */
+  --color-chart-1: #3b82f6;
+  --color-chart-2: #10b981;
+  --color-chart-3: #8b5cf6;
+  --color-chart-4: #f59e0b;
+  --color-chart-5: #ef4444;
+
+  /* Layout */
+  --sidebar-width: 220px;
+}
+
+/* ── Dark overrides ─────────────────────────────────────────────────────── */
+.dark {
+  --color-background: #020617;
+  --color-foreground: #f1f5f9;
+  --color-card:    #0f172a;
+  --color-card-fg: #f1f5f9;
+  --color-muted:   #1e293b;
+  --color-muted-fg:#94a3b8;
+  --color-border:  #1e293b;
+
+  --color-primary:    #60a5fa;
+  --color-primary-fg: #020617;
+  --color-primary-hover: #3b82f6;
+
+  --color-destructive:    #f87171;
+  --color-destructive-bg: #1c0a0a;
+  --color-warning:        #fbbf24;
+  --color-warning-bg:     #1c1200;
+  --color-success:        #34d399;
+
+  --color-sidebar:    #020617;
+  --color-sidebar-fg: #94a3b8;
+
+  color-scheme: dark;
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after { box-sizing: border-box; }
+
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+  }
+  html.dark { color-scheme: dark; }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.5;
+  }
+
+  /* Focus ring — apply via focus-visible: ring-2 ring-primary/50 */
+  :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-muted-fg); }
+
+  /* Tabular numbers for data columns */
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* Touch */
+  button, a, [role="button"] { touch-action: manipulation; }
+}
+
+/* ── Recharts tooltip overrides ─────────────────────────────────────────── */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: var(--color-card) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12) !important;
+  color: var(--color-foreground) !important;
+  font-size: 0.8125rem !important;
+}
+.recharts-default-tooltip .recharts-tooltip-label {
+  color: var(--color-muted-fg) !important;
+  font-weight: 600 !important;
+  margin-bottom: 4px !important;
+}
+
+/* ── Shimmer skeleton ───────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-muted) 25%,
+    var(--color-border) 37%,
+    var(--color-muted) 63%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 4px;
+}

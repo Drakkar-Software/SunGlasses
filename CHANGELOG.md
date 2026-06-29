@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Analytics dashboard — app filter** (`apps/analytics-dashboard`): new "App" dropdown in the filter bar scopes every query to a specific application. App identity is read from `context.app.name` in each event's JSON context field (not a Parquet column). The `/api/apps` endpoint lists distinct app names with event counts; `(unknown)` is used when the field is absent. All aggregation routes (`/api/overview`, `/api/timeseries`, `/api/dau`, `/api/events/top`, `/api/screens/top`, `/api/retention`) now accept an `app` query parameter and apply the filter via `json_extract_string(context, '$.app.name')`.
+- **Analytics dashboard — Errors page** (`apps/analytics-dashboard`): dedicated Errors section in the sidebar replaces the former "Top errors" table. Shows grouped errors (by type + message) with severity badges, handled/unhandled status, occurrence counts, affected-device counts (via `anonymous_id`), and relative timestamps. Selecting a group opens a detail panel with an occurrences-over-time chart, sample stack traces (with a prompt to enable `captureStack` when none are present), and a version/platform breakdown table. New backend routes: `GET /api/errors` (groups), `GET /api/errors/timeseries`, `GET /api/errors/detail`. Privacy: all device counts use `anonymous_id`; `distinct_id` is never selected or displayed.
+- **Analytics dashboard — sidebar layout** (`apps/analytics-dashboard`): replaced the horizontal tab bar with a left-side navigation sidebar (Overview, Events, Screens, Errors, Retention, Query). Sidebar collapses to an off-canvas drawer on mobile.
+- **Analytics dashboard — dark mode** (`apps/analytics-dashboard`): full light / dark theme via a `ThemeToggle` button in the sidebar footer. Preference is persisted to `localStorage` (`sg-dash-theme`); on first load falls back to `prefers-color-scheme`. Theme is applied before first paint to avoid flash.
+- **Analytics dashboard — Tailwind CSS v4** (`apps/analytics-dashboard`): migrated from hand-written CSS to Tailwind v4 (`@tailwindcss/vite` plugin). Semantic CSS-variable design tokens (`--color-background`, `--color-card`, `--color-border`, `--color-primary`, `--color-sidebar-*`, `--color-chart-1…5`, etc.) are defined in `src/index.css` via `@theme {}`; the `.dark {}` override block adapts all tokens automatically so components never need `dark:` utility prefixes.
+- **Analytics dashboard — Recharts chart theming** (`apps/analytics-dashboard`): new `useChartTheme()` hook reads CSS-variable color tokens at runtime and re-reads whenever the `dark` class toggles on `<html>`, passing theme-correct colors to Recharts `<Line>`, `<Bar>`, and `<CartesianGrid>` elements.
+- **Analytics dashboard — demo seed script** (`apps/analytics-dashboard`): `pnpm --filter analytics-dashboard seed:demo` generates 60 days of demo Parquet data under `.parquet-cache/demo/` with two apps (`octochat-mobile`, `octochat-web`), four error types with varied handled/level/stack state, and realistic event mixes for exploring the app filter and Errors page.
+
+### Changed
+
+- **Analytics dashboard — section layout** (`apps/analytics-dashboard`): former "Breakdowns" tab split into dedicated **Events** and **Screens** sidebar sections; **Retention** and **Query** remain top-level sections. Each section manages its own data fetching via `useTransition` (no more global loading state in `App.tsx`).
+- **Analytics dashboard — overview KPIs** (`apps/analytics-dashboard`): the KPI cards now include an **Errors** card showing total error count and affected-device count for the selected range/app; errors are highlighted in destructive red when non-zero.
+
 ## [0.12.1] — 2026-06-26
 
 ### Fixed
