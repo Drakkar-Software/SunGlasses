@@ -16,6 +16,9 @@ import {
   addStarfishApp as engineAddStarfishApp,
   removeStarfishApp as engineRemoveStarfishApp,
 } from './engine/duckdb.js';
+import type { ProgressFn } from './engine/duckdb.js';
+
+export type { ProgressFn };
 import type { DataSourceKind, ConfigStatus, SyncStats } from './engine/config.js';
 import {
   parseS3Input,
@@ -182,7 +185,7 @@ export async function fetchConfigStatus(): Promise<ConfigStatus> {
 }
 
 /** Connect to a data source — replaces the POST /api/config call. */
-export async function saveConfig(input: ConfigInput): Promise<ConfigStatus> {
+export async function saveConfig(input: ConfigInput, onProgress?: ProgressFn): Promise<ConfigStatus> {
   const isStarfish =
     'baseUrl' in input ||
     'cap' in input ||
@@ -203,7 +206,7 @@ export async function saveConfig(input: ConfigInput): Promise<ConfigStatus> {
       remember:    loadBrowserConfig()?.remember,
     });
 
-    const stats = await configureStarfish(parsed);
+    const stats = await configureStarfish(parsed, onProgress);
     return statusForStarfish(getStarfishConfig(), true, null, stats);
   }
 
@@ -233,14 +236,14 @@ export async function clearConfig(): Promise<void> {
 }
 
 /** Re-sync Starfish data — replaces POST /api/sync. */
-export async function triggerSync(): Promise<ConfigStatus> {
-  const stats = await resyncStarfish();
+export async function triggerSync(onProgress?: ProgressFn): Promise<ConfigStatus> {
+  const stats = await resyncStarfish(onProgress);
   return statusForStarfish(getStarfishConfig(), true, null, stats);
 }
 
 /** Add an app slug to the active Starfish connection and persist the updated list. */
-export async function addStarfishApp(app: string): Promise<ConfigStatus> {
-  const stats = await engineAddStarfishApp(app);
+export async function addStarfishApp(app: string, onProgress?: ProgressFn): Promise<ConfigStatus> {
+  const stats = await engineAddStarfishApp(app, onProgress);
   const cfg   = getStarfishConfig();
   const b     = loadBrowserConfig();
   if (b && cfg) saveBrowserConfig({ ...b, apps: cfg.apps });

@@ -5,6 +5,7 @@
 import { useState, type KeyboardEvent } from 'react';
 import type { ConfigStatus } from '../api';
 import { addStarfishApp, removeStarfishApp } from '../api';
+import { SyncProgressCompact } from './DataSourcePanel';
 
 interface Props {
   status:    ConfigStatus;
@@ -15,6 +16,7 @@ export function AppManager({ status, onChanged }: Props) {
   const [inputValue, setInputValue] = useState('');
   const [busy,       setBusy]       = useState(false);
   const [error,      setError]      = useState<string | null>(null);
+  const [progress,   setProgress]   = useState<{ done: number; total: number } | null>(null);
 
   if (status.dataSource !== 'starfish') return null;
 
@@ -25,14 +27,16 @@ export function AppManager({ status, onChanged }: Props) {
     if (!slug) return;
     setBusy(true);
     setError(null);
+    setProgress(null);
     try {
-      const next = await addStarfishApp(slug);
+      const next = await addStarfishApp(slug, (done, total) => setProgress({ done, total }));
       setInputValue('');
       onChanged(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add app');
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -98,6 +102,10 @@ export function AppManager({ status, onChanged }: Props) {
           {busy ? '…' : 'Add'}
         </button>
       </div>
+
+      {busy && progress ? (
+        <SyncProgressCompact done={progress.done} total={progress.total} />
+      ) : null}
 
       {error ? (
         <p className="text-[0.6875rem] text-destructive" role="alert">{error}</p>

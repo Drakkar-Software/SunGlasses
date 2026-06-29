@@ -13,6 +13,8 @@ import { formatS3Error } from './config.js';
 import {
   syncApp,
   rehydrateApp,
+  listNewBatchIds,
+  downloadBatchIds,
   getRegisteredBuffers,
   getRegisteredFiles,
   clearRegistry,
@@ -23,6 +25,9 @@ import {
   idbClearApp,
   idbClearAll,
 } from './starfish-sync.js';
+
+/** Progress callback — `done` files downloaded so far out of `total` this operation. */
+export type ProgressFn = (done: number, total: number) => void;
 
 // ── Singleton state ───────────────────────────────────────────────────────────
 
@@ -194,11 +199,28 @@ export async function configureDirectS3(config: S3Config): Promise<void> {
 }
 
 /** Configure DuckDB for Starfish (sync all app batches into memory, then register). */
-export async function configureStarfish(config: StarfishConfig): Promise<SyncStats> {
+export async function configureStarfish(
+  config:      StarfishConfig,
+  onProgress?: ProgressFn,
+): Promise<SyncStats> {
   try {
-    // Pull new batches for each configured app
-    for (const app of config.apps) await syncApp(config, app);
-    // Fill registry from IndexedDB (or network fallback) for files already in manifests
+    // Phase 1: list all apps' new batches first so we know the grand total
+    const perApp: Array<{ app: string; ids: string[] }> = [];
+    for (const app of config.apps) {
+      perApp.push({ app, ids: await listNewBatchIds(config, app) });
+    }
+    const grandTotal = perApp.reduce((s, x) => s + x.ids.length, 0);
+
+    // Phase 2: download with accurate global progress (no bar regression between apps)
+    let globalDone = 0;
+    for (const { app, ids } of perApp) {
+      await downloadBatchIds(config, app, ids, () => {
+        globalDone++;
+        if (grandTotal > 0) onProgress?.(globalDone, grandTotal);
+      });
+    }
+
+    // Phase 3: fill registry from IndexedDB for files already in manifests
     for (const app of config.apps) await rehydrateApp(config, app);
     const stats = computeSyncStats(config.apps);
     await setupStarfishCache(config, stats);
@@ -212,11 +234,22 @@ export async function configureStarfish(config: StarfishConfig): Promise<SyncSta
 }
 
 /** Re-sync Starfish (pull new batches for all apps, rebuild macro). */
-export async function resyncStarfish(): Promise<SyncStats> {
+export async function resyncStarfish(onProgress?: ProgressFn): Promise<SyncStats> {
   if (!_starfishConf) throw new Error('Not connected to Starfish');
   const config = _starfishConf;
   try {
-    for (const app of config.apps) await syncApp(config, app);
+    const perApp: Array<{ app: string; ids: string[] }> = [];
+    for (const app of config.apps) {
+      perApp.push({ app, ids: await listNewBatchIds(config, app) });
+    }
+    const grandTotal = perApp.reduce((s, x) => s + x.ids.length, 0);
+    let globalDone = 0;
+    for (const { app, ids } of perApp) {
+      await downloadBatchIds(config, app, ids, () => {
+        globalDone++;
+        if (grandTotal > 0) onProgress?.(globalDone, grandTotal);
+      });
+    }
     const stats = computeSyncStats(config.apps);
     await setupStarfishCache(config, stats);
     await testConnection();
@@ -229,7 +262,7 @@ export async function resyncStarfish(): Promise<SyncStats> {
 }
 
 /** Add an app slug to the active Starfish connection and sync it incrementally. */
-export async function addStarfishApp(app: string): Promise<SyncStats> {
+export async function addStarfishApp(app: string, onProgress?: ProgressFn): Promise<SyncStats> {
   if (!_starfishConf) throw new Error('Not connected to Starfish');
   const slug = app.trim();
   if (!slug) throw new Error('App slug is required');
@@ -240,7 +273,7 @@ export async function addStarfishApp(app: string): Promise<SyncStats> {
     const next = { ..._starfishConf, apps: [..._starfishConf.apps, slug] };
     // Pull new batches then fill registry (IDB-first) for the new app only.
     // _starfishConf is only updated after a successful sync so a failure leaves state intact.
-    await syncApp(next, slug);
+    await syncApp(next, slug, onProgress);
     await rehydrateApp(next, slug);
     _starfishConf = next;
     const stats = computeSyncStats(next.apps);

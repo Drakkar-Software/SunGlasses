@@ -3,15 +3,16 @@ import { AppSelector } from './AppSelector';
 import { DateRangeControls } from './DateRangeControls';
 
 interface Props {
-  range: DateRangeParams;
-  onRange: (r: DateRangeParams) => void;
-  selectedApp: string | undefined;
-  onApp: (app: string | undefined) => void;
-  onMenuOpen: () => void;
-  children?: React.ReactNode;
+  range:        DateRangeParams;
+  onRange:      (r: DateRangeParams) => void;
+  selectedApp:  string | undefined;
+  onApp:        (app: string | undefined) => void;
+  onMenuOpen:   () => void;
+  appSelectKey?: number;
+  children?:    React.ReactNode;
 }
 
-export function FilterBar({ range, onRange, selectedApp, onApp, onMenuOpen, children }: Props) {
+export function FilterBar({ range, onRange, selectedApp, onApp, onMenuOpen, appSelectKey, children }: Props) {
   return (
     <header className="sticky top-0 z-10 flex items-center gap-3 flex-wrap bg-background/80 backdrop-blur-sm px-5 py-3 border-b border-border">
       {/* Mobile hamburger */}
@@ -26,7 +27,7 @@ export function FilterBar({ range, onRange, selectedApp, onApp, onMenuOpen, chil
         </svg>
       </button>
 
-      <AppSelector range={range} value={selectedApp} onChange={onApp} />
+      <AppSelector range={range} value={selectedApp} onChange={onApp} refreshKey={appSelectKey} />
       <DateRangeControls range={range} onChange={onRange} />
 
       {children ? <div className="flex items-center gap-2 ml-auto">{children}</div> : null}

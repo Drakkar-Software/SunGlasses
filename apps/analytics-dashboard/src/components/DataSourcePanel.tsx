@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import type { ConfigInput, ConfigStatus } from '../api';
+import type { ConfigInput, ConfigStatus, ProgressFn } from '../api';
 import {
   loadBrowserConfig,
   saveBrowserConfig,
@@ -41,11 +41,13 @@ export function DataSourcePanel({ status, onConnected }: Props) {
   const [remember,    setRemember]    = useState(browser?.remember === true);
   const [submitting,  setSubmitting]  = useState(false);
   const [error,       setError]       = useState<string | null>(status?.error ?? null);
+  const [progress,    setProgress]    = useState<{ done: number; total: number } | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    setProgress(null);
 
     const apps = appsText.split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -71,13 +73,18 @@ export function DataSourcePanel({ status, onConnected }: Props) {
       });
     }
 
+    const onProgress: ProgressFn | undefined = mode === 'starfish'
+      ? (done, total) => setProgress({ done, total })
+      : undefined;
+
     try {
-      const next = await saveConfig(input);
+      const next = await saveConfig(input, onProgress);
       onConnected(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connection failed');
     } finally {
       setSubmitting(false);
+      setProgress(null);
     }
   }
 
@@ -256,6 +263,10 @@ export function DataSourcePanel({ status, onConnected }: Props) {
             >
               {submitting ? 'Connecting…' : mode === 'starfish' ? 'Connect via Starfish' : 'Connect to S3'}
             </button>
+
+            {submitting && progress ? (
+              <SyncProgress done={progress.done} total={progress.total} />
+            ) : null}
           </form>
 
           <p className="mt-4 text-xs text-muted-fg">
@@ -312,19 +323,22 @@ export function SyncBar({
 }) {
   const [syncing,   setSyncing]   = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [progress,  setProgress]  = useState<{ done: number; total: number } | null>(null);
 
   if (status.dataSource !== 'starfish') return null;
 
   async function handleSync() {
     setSyncing(true);
     setSyncError(null);
+    setProgress(null);
     try {
-      const next = await triggerSync();
+      const next = await triggerSync((done, total) => setProgress({ done, total }));
       onSynced(next);
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : 'Sync failed');
     } finally {
       setSyncing(false);
+      setProgress(null);
     }
   }
 
@@ -335,33 +349,43 @@ export function SyncBar({
 
   if (compact) {
     return (
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[0.6875rem] text-sidebar-fg truncate">{label}</span>
-        <button
-          type="button"
-          disabled={syncing}
-          onClick={() => void handleSync()}
-          aria-label="Refresh data from Starfish"
-          className="shrink-0 text-[0.6875rem] text-sidebar-active hover:underline disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sidebar-active rounded"
-        >
-          {syncing ? 'Syncing…' : 'Refresh'}
-        </button>
-        {syncError ? <span className="text-[0.6875rem] text-destructive truncate">{syncError}</span> : null}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[0.6875rem] text-sidebar-fg truncate">{label}</span>
+          <button
+            type="button"
+            disabled={syncing}
+            onClick={() => void handleSync()}
+            aria-label="Refresh data from Starfish"
+            className="shrink-0 text-[0.6875rem] text-sidebar-active hover:underline disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sidebar-active rounded"
+          >
+            {syncing ? 'Syncing…' : 'Refresh'}
+          </button>
+        </div>
+        {syncing && progress ? (
+          <SyncProgressCompact done={progress.done} total={progress.total} />
+        ) : null}
+        {syncError ? <span className="text-[0.6875rem] text-destructive">{syncError}</span> : null}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2">
-      <span className="text-xs text-muted-fg flex-1">{label}</span>
-      <button
-        type="button"
-        disabled={syncing}
-        onClick={() => void handleSync()}
-        className="text-xs font-medium text-primary hover:text-primary-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded"
-      >
-        {syncing ? 'Refreshing…' : 'Refresh data'}
-      </button>
+    <div className="space-y-2 rounded-lg border border-border bg-muted/50 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-xs text-muted-fg flex-1">{label}</span>
+        <button
+          type="button"
+          disabled={syncing}
+          onClick={() => void handleSync()}
+          className="text-xs font-medium text-primary hover:text-primary-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded"
+        >
+          {syncing ? 'Refreshing…' : 'Refresh data'}
+        </button>
+      </div>
+      {syncing && progress ? (
+        <SyncProgress done={progress.done} total={progress.total} />
+      ) : null}
       {syncError ? <span className="text-xs text-destructive">{syncError}</span> : null}
     </div>
   );
@@ -371,4 +395,54 @@ function formatBytes(n: number): string {
   if (n < 1024)              return `${n} B`;
   if (n < 1024 * 1024)      return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── Progress indicators ───────────────────────────────────────────────────────
+
+/** Full-width progress bar with label — used in the setup form. */
+export function SyncProgress({ done, total }: { done: number; total: number }) {
+  if (total === 0) return null;
+  const pct = Math.min(100, Math.round((done / total) * 100));
+  return (
+    <div className="space-y-1.5" role="status" aria-live="polite">
+      <div className="h-[3px] w-full rounded-full bg-primary/15 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+          style={{ width: `${pct}%` }}
+          role="progressbar"
+          aria-valuenow={done}
+          aria-valuemax={total}
+          aria-label={`Downloading ${done} of ${total} files`}
+        />
+      </div>
+      <p className="text-xs text-muted-fg tabular-nums">
+        {done < total
+          ? `Downloading ${done} / ${total} ${total === 1 ? 'file' : 'files'}…`
+          : `Downloaded ${total} ${total === 1 ? 'file' : 'files'}`}
+      </p>
+    </div>
+  );
+}
+
+/** Compact progress bar — used inside the sidebar SyncBar and AppManager. */
+export function SyncProgressCompact({ done, total }: { done: number; total: number }) {
+  if (total === 0) return null;
+  const pct = Math.min(100, Math.round((done / total) * 100));
+  return (
+    <div className="space-y-0.5" role="status" aria-live="polite">
+      <div className="h-[2px] w-full rounded-full bg-white/10 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-sidebar-active transition-all duration-300 ease-out"
+          style={{ width: `${pct}%` }}
+          role="progressbar"
+          aria-valuenow={done}
+          aria-valuemax={total}
+          aria-label={`Downloading ${done} of ${total} files`}
+        />
+      </div>
+      <p className="text-[0.625rem] text-sidebar-fg tabular-nums">
+        {done} / {total} {total === 1 ? 'file' : 'files'}
+      </p>
+    </div>
+  );
 }

@@ -3,12 +3,13 @@ import type { AppInfo, DateRangeParams } from '../api';
 import { fetchApps } from '../api';
 
 interface Props {
-  range: DateRangeParams;
-  value: string | undefined;
-  onChange: (app: string | undefined) => void;
+  range:       DateRangeParams;
+  value:       string | undefined;
+  onChange:    (app: string | undefined) => void;
+  refreshKey?: number;
 }
 
-export function AppSelector({ range, value, onChange }: Props) {
+export function AppSelector({ range, value, onChange, refreshKey }: Props) {
   const [apps, setApps]       = useState<AppInfo[]>([]);
   const [open, setOpen]       = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,8 @@ export function AppSelector({ range, value, onChange }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [range.from, range.to]);
+  // refreshKey changes when apps are added/removed, triggering a re-query
+  }, [range.from, range.to, refreshKey]);
 
   useEffect(() => {
     void load();

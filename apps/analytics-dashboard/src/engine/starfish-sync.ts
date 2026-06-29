@@ -139,50 +139,83 @@ export function computeSyncStats(apps: string[]): SyncStats {
 // ── Per-app sync ──────────────────────────────────────────────────────────────
 
 /**
- * Incrementally pull new Parquet batches for one app from Starfish into _registry.
- * Files already in the manifest (by filename) are skipped — they will be filled from
- * IndexedDB or re-pulled by rehydrateApp().
- * Newly downloaded bytes are also written through to IndexedDB.
+ * List batch IDs that are not yet in the manifest for one app.
+ * Lightweight — only makes list API calls, no downloads.
+ * Used by duckdb.ts to compute the grand total before starting downloads.
  */
-export async function syncApp(config: StarfishConfig, app: string): Promise<void> {
-  const manifest   = loadManifest(app);
-  const appMap     = _registry.get(app) ?? new Map<string, Uint8Array>();
+export async function listNewBatchIds(config: StarfishConfig, app: string): Promise<string[]> {
+  const manifest    = loadManifest(app);
+  const newBatchIds: string[] = [];
   let after: string | undefined;
-  let downloaded   = 0;
-  let skipped      = 0;
 
   for (;;) {
     const page = await listBatches(config, app, { after, limit: 100 });
     for (const batchId of page.items) {
-      const fileName = batchFileName(batchId);
-      if (manifest.files[fileName]) {
-        // Already synced in a previous session — rehydrateApp() will load bytes.
-        skipped += 1;
-        continue;
-      }
-      const { data, etag } = await pullBatch(config, app, batchId);
-      const bytes = new Uint8Array(data);
-      appMap.set(fileName, bytes);
-      await idbPut(app, fileName, bytes);          // write-through to IndexedDB
-      manifest.files[fileName] = {
-        etag,
-        syncedAt: new Date().toISOString(),
-        bytes:    bytes.byteLength,
-      };
-      downloaded += 1;
+      if (!manifest.files[batchFileName(batchId)]) newBatchIds.push(batchId);
     }
-
     if (!page.hasMore || page.items.length === 0) break;
     after = page.items[page.items.length - 1]!;
+  }
+
+  return newBatchIds;
+}
+
+/**
+ * Download a pre-computed list of batch IDs for one app and register them.
+ * `onEach` fires after each batch is stored; callers use it to track global progress.
+ */
+export async function downloadBatchIds(
+  config:   StarfishConfig,
+  app:      string,
+  batchIds: string[],
+  onEach?:  () => void,
+): Promise<void> {
+  if (batchIds.length === 0) return;
+
+  const manifest = loadManifest(app);
+  const appMap   = _registry.get(app) ?? new Map<string, Uint8Array>();
+
+  for (const batchId of batchIds) {
+    const fileName        = batchFileName(batchId);
+    const { data, etag }  = await pullBatch(config, app, batchId);
+    const bytes           = new Uint8Array(data);
+    appMap.set(fileName, bytes);
+    await idbPut(app, fileName, bytes);
+    manifest.files[fileName] = {
+      etag,
+      syncedAt: new Date().toISOString(),
+      bytes:    bytes.byteLength,
+    };
+    onEach?.();
   }
 
   manifest.lastSyncAt = new Date().toISOString();
   saveManifest(app, manifest);
   _registry.set(app, appMap);
+}
 
+/**
+ * Incrementally pull new Parquet batches for one app from Starfish into _registry.
+ * Uses a two-phase approach (list → download) so `total` is known before progress starts,
+ * avoiding indeterminate spinners.
+ */
+export async function syncApp(
+  config:      StarfishConfig,
+  app:         string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  const newBatchIds = await listNewBatchIds(config, app);
+  let done = 0;
+  await downloadBatchIds(config, app, newBatchIds, () => {
+    done++;
+    onProgress?.(done, newBatchIds.length);
+  });
+
+  const manifest = loadManifest(app);
+  const skipped  = Object.keys(manifest.files).length - newBatchIds.length;
   console.log(
-    `[dashboard] Starfish sync (${app}): ${downloaded} downloaded, ${skipped} skipped,`,
-    `${Object.keys(manifest.files).length} total`,
+    `[dashboard] Starfish sync (${app}): ${newBatchIds.length} downloaded,`,
+    `${skipped} skipped, ${Object.keys(manifest.files).length} total`,
   );
 }
 
@@ -191,7 +224,11 @@ export async function syncApp(config: StarfishConfig, app: string): Promise<void
  * (fallback), for files that are in the manifest but not already in _registry.
  * Called after syncApp() — covers files downloaded in a previous session.
  */
-export async function rehydrateApp(config: StarfishConfig, app: string): Promise<void> {
+export async function rehydrateApp(
+  config:      StarfishConfig,
+  app:         string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
   const manifest = loadManifest(app);
   const appMap   = _registry.get(app) ?? new Map<string, Uint8Array>();
   const missing  = Object.keys(manifest.files).filter((f) => !appMap.has(f));
@@ -200,21 +237,23 @@ export async function rehydrateApp(config: StarfishConfig, app: string): Promise
   let fromIdb     = 0;
   let fromNetwork = 0;
 
-  for (const fileName of missing) {
+  for (let i = 0; i < missing.length; i++) {
+    const fileName = missing[i]!;
     // 1. Try IndexedDB first (no network needed)
     const cached = await idbGet(app, fileName);
     if (cached) {
       appMap.set(fileName, cached);
       fromIdb += 1;
-      continue;
+    } else {
+      // 2. IDB miss (first reload after upgrade, or IDB cleared) — pull from network
+      const batchId = fileName.endsWith('.parquet') ? fileName.slice(0, -'.parquet'.length) : fileName;
+      const { data } = await pullBatch(config, app, batchId);
+      const bytes = new Uint8Array(data);
+      appMap.set(fileName, bytes);
+      await idbPut(app, fileName, bytes);  // backfill IndexedDB
+      fromNetwork += 1;
     }
-    // 2. IDB miss (first reload after upgrade, or IDB cleared) — pull from network
-    const batchId = fileName.endsWith('.parquet') ? fileName.slice(0, -'.parquet'.length) : fileName;
-    const { data } = await pullBatch(config, app, batchId);
-    const bytes = new Uint8Array(data);
-    appMap.set(fileName, bytes);
-    await idbPut(app, fileName, bytes);            // backfill IndexedDB
-    fromNetwork += 1;
+    onProgress?.(i + 1, missing.length);
   }
 
   _registry.set(app, appMap);

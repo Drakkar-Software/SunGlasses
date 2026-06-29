@@ -62,10 +62,11 @@ function AppShell({
   onStatusChange: (s: ConfigStatus) => void;
   onDisconnect: () => void;
 }) {
-  const [section, setSection]   = useState<Section>('overview');
-  const [mobileOpen, setMobile] = useState(false);
-  const [selectedApp, setApp]   = useState<string | undefined>(undefined);
-  const [range, setRange]       = useState<DateRangeParams>({
+  const [section, setSection]       = useState<Section>('overview');
+  const [mobileOpen, setMobile]     = useState(false);
+  const [selectedApp, setApp]       = useState<string | undefined>(undefined);
+  const [appSelectKey, setSelectKey] = useState(0);
+  const [range, setRange]           = useState<DateRangeParams>({
     from: daysAgo(30),
     to:   daysAgo(0),
   });
@@ -77,13 +78,19 @@ function AppShell({
     onDisconnect();
   }, [onDisconnect]);
 
+  // Increment key so AppSelector re-queries after an app is added or removed.
+  const handleSynced = useCallback((s: ConfigStatus) => {
+    onStatusChange(s);
+    setSelectKey((k) => k + 1);
+  }, [onStatusChange]);
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar
         section={section}
         onSection={setSection}
         status={status}
-        onSynced={onStatusChange}
+        onSynced={handleSynced}
         onChangeConnection={handleDisconnect}
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobile(false)}
@@ -96,6 +103,7 @@ function AppShell({
           selectedApp={selectedApp}
           onApp={setApp}
           onMenuOpen={() => setMobile(true)}
+          appSelectKey={appSelectKey}
         />
 
         <main className="flex-1 overflow-y-auto p-5">
