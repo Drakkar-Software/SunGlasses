@@ -334,9 +334,26 @@ function parseConfigStatus(body: Record<string, unknown>): ConfigStatus {
   };
 }
 
+const DEFAULT_CONFIG_STATUS: ConfigStatus = {
+  ready:              false,
+  dataSource:         null,
+  source:             null,
+  bucket:             null,
+  prefix:             'events',
+  region:             'us-east-1',
+  endpointUrl:        null,
+  authMode:           'none',
+  baseUrl:            null,
+  app:                null,
+  cacheDir:           null,
+  starfishPublicRead: false,
+  sync:               null,
+  error:              null,
+};
+
 export async function fetchConfigStatus(): Promise<ConfigStatus> {
   const res = await fetch('/api/config/status');
-  assertJson(res);
+  if (!res.headers.get('content-type')?.includes('application/json')) return DEFAULT_CONFIG_STATUS;
   const body = await res.json();
   if (!res.ok || !body.ok) throw new Error(body.error ?? `Config status failed (${res.status})`);
   return parseConfigStatus(body);
