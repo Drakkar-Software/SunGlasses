@@ -129,13 +129,13 @@ export function App() {
         let status = await fetchConfigStatus();
         if (!cancelled && !status.ready && canAutoConnectFromBrowser()) {
           const saved = loadBrowserConfig();
-          if (saved?.mode === 'starfish' && saved.baseUrl && saved.app) {
+          if (saved?.mode === 'starfish' && saved.baseUrl && saved.apps?.length) {
             if (saved.publicRead || (saved.capJson && saved.devEdPrivHex)) {
               try {
                 status = await saveConfig({
                   source:       'starfish',
                   baseUrl:      saved.baseUrl,
-                  app:          saved.app,
+                  apps:         saved.apps,
                   publicRead:   saved.publicRead,
                   cap:          saved.capJson,
                   devEdPrivHex: saved.devEdPrivHex,
@@ -169,7 +169,7 @@ export function App() {
             endpointUrl:       null,
             authMode:          'none',
             baseUrl:           null,
-            app:               null,
+            apps:              [],
             cacheDir:          null,
             starfishPublicRead: false,
             sync:              null,

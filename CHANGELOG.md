@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Multiple Starfish app slugs** (`apps/analytics-dashboard`): the Starfish data source now supports multiple app slugs configured in one connection. Enter several slugs comma-separated in the "App slugs" field in the setup form (e.g. `my-app, other-app`); all configured apps are synced and their Parquet data is aggregated in DuckDB — use the existing app-filter dropdown to narrow to a single app. Apps can also be added or removed live from the sidebar after connecting without a full reconnect (incrementally syncs the new app or drops the removed app's data, manifest, and cached bytes).
+- **Persistent IndexedDB Parquet cache** (`apps/analytics-dashboard`): Parquet batch bytes are now cached in IndexedDB (keyed per app) so page reloads only download genuinely new batches instead of re-pulling every file. The per-app `localStorage` manifest continues to track which filenames exist; bytes are fetched from IndexedDB first and only fall back to the network on a miss (e.g. first reload after upgrade or IDB cleared). The cache is cleared automatically on disconnect.
+
 ### Changed
 
 - **Analytics dashboard — fully client-side via DuckDB-WASM** (`apps/analytics-dashboard`): the Fastify + native DuckDB server has been removed entirely. DuckDB now runs in the browser via `@duckdb/duckdb-wasm`. On first connect the browser fetches the WASM bundles from jsDelivr (`cdn.jsdelivr.net`) — Cloudflare Workers' 25 MiB per-asset limit makes self-hosting the 35–41 MiB `.wasm` files impossible, so they are not bundled into `dist/`. The app connects directly to your S3 bucket (Direct S3 mode) or pulls Parquet batches from a Starfish sync server (Starfish mode) — all from the browser. Credentials never leave the browser tab. The deployed Cloudflare build now works standalone with no backend to operate. Breaking: the `ANALYTICS_*` environment variables and local `.s3-config.local.json` / `.starfish-config.local.json` files are no longer read; connect via the in-app setup form instead.

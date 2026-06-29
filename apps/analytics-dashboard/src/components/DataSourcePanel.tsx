@@ -31,7 +31,9 @@ export function DataSourcePanel({ status, onConnected }: Props) {
 
   // Starfish fields
   const [baseUrl,      setBaseUrl]      = useState(status?.baseUrl    ?? browser?.baseUrl    ?? '');
-  const [app,          setApp]          = useState(status?.app        ?? browser?.app        ?? '');
+  const [appsText,     setAppsText]     = useState(
+    status?.apps?.join(', ') ?? browser?.apps?.join(', ') ?? '',
+  );
   const [publicRead,   setPublicRead]   = useState(status?.starfishPublicRead ?? browser?.publicRead === true);
   const [capJson,      setCapJson]      = useState(browser?.capJson      ?? '');
   const [devEdPrivHex, setDevEdPrivHex] = useState(browser?.devEdPrivHex ?? '');
@@ -45,12 +47,14 @@ export function DataSourcePanel({ status, onConnected }: Props) {
     setSubmitting(true);
     setError(null);
 
+    const apps = appsText.split(',').map((s) => s.trim()).filter(Boolean);
+
     let input: ConfigInput;
     if (mode === 'starfish') {
-      input = { source: 'starfish', baseUrl, app, publicRead };
+      input = { source: 'starfish', baseUrl, apps, publicRead };
       if (!publicRead) { input.cap = capJson; input.devEdPrivHex = devEdPrivHex; }
       saveBrowserConfig({
-        mode: 'starfish', baseUrl, app, publicRead,
+        mode: 'starfish', baseUrl, apps, publicRead,
         capJson:      remember && !publicRead ? capJson      : undefined,
         devEdPrivHex: remember && !publicRead ? devEdPrivHex : undefined,
         remember,
@@ -138,11 +142,15 @@ export function DataSourcePanel({ status, onConnected }: Props) {
                     className={inputCls}
                   />
                 </Field>
-                <Field label="App slug" required>
+                <Field
+                  label="App slugs"
+                  required
+                  hint="One or more slugs, comma-separated. Add or remove apps later from the sidebar."
+                >
                   <input
-                    type="text" required value={app}
-                    onChange={(e) => setApp(e.target.value)}
-                    placeholder="my app"
+                    type="text" required value={appsText}
+                    onChange={(e) => setAppsText(e.target.value)}
+                    placeholder="my-app, other-app"
                     autoComplete="off"
                     className={inputCls}
                   />

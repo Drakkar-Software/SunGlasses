@@ -11,24 +11,30 @@ import * as duckdb from '@duckdb/duckdb-wasm';
 import type { S3Config, StarfishConfig, SyncStats, DataSourceKind } from './config.js';
 import { formatS3Error } from './config.js';
 import {
-  syncParquetCache,
-  rehydrateRegistry,
+  syncApp,
+  rehydrateApp,
   getRegisteredBuffers,
   getRegisteredFiles,
   clearRegistry,
+  clearRegistryApp,
+  clearManifest,
+  clearAllManifests,
   computeSyncStats,
+  idbClearApp,
+  idbClearAll,
 } from './starfish-sync.js';
 
 // ── Singleton state ───────────────────────────────────────────────────────────
 
-let _db:           duckdb.AsyncDuckDB | null          = null;
-let _conn:         duckdb.AsyncDuckDBConnection | null = null;
-let _dataSource:   DataSourceKind                     = null;
-let _s3Config:     S3Config | null                    = null;
-let _starfishConf: StarfishConfig | null              = null;
-let _syncStats:    SyncStats | null                   = null;
-let _ready:        boolean                            = false;
-let _lastError:    string | null                      = null;
+let _db:             duckdb.AsyncDuckDB | null          = null;
+let _conn:           duckdb.AsyncDuckDBConnection | null = null;
+let _dataSource:     DataSourceKind                     = null;
+let _s3Config:       S3Config | null                    = null;
+let _starfishConf:   StarfishConfig | null              = null;
+let _syncStats:      SyncStats | null                   = null;
+let _ready:          boolean                            = false;
+let _lastError:      string | null                      = null;
+let _starfishBusy:   boolean                            = false;
 
 // ── WASM init (lazy) ──────────────────────────────────────────────────────────
 
@@ -123,6 +129,9 @@ async function setupStarfishCache(
   const db  = await ensureDb();
   _conn     = await db.connect();
 
+  // Evict any previously registered Parquet files (handles removed apps and re-registration).
+  await db.dropFiles();
+
   // Register all in-memory Parquet buffers
   const buffers = getRegisteredBuffers();
   for (const { name, data } of buffers) {
@@ -157,12 +166,12 @@ async function setupStarfishCache(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function isDbReady(): boolean         { return _ready; }
-export function getDataSource(): DataSourceKind { return _dataSource; }
-export function getLastError(): string | null { return _lastError; }
-export function getS3Config(): S3Config | null { return _s3Config; }
+export function isDbReady(): boolean              { return _ready; }
+export function getDataSource(): DataSourceKind   { return _dataSource; }
+export function getLastError(): string | null     { return _lastError; }
+export function getS3Config(): S3Config | null    { return _s3Config; }
 export function getStarfishConfig(): StarfishConfig | null { return _starfishConf; }
-export function getSyncStats(): SyncStats | null { return _syncStats; }
+export function getSyncStats(): SyncStats | null  { return _syncStats; }
 
 /** Configure DuckDB for Direct S3 reads and verify connectivity. */
 export async function configureDirectS3(config: S3Config): Promise<void> {
@@ -176,14 +185,14 @@ export async function configureDirectS3(config: S3Config): Promise<void> {
   }
 }
 
-/** Configure DuckDB for Starfish (sync batches into memory, then register). */
+/** Configure DuckDB for Starfish (sync all app batches into memory, then register). */
 export async function configureStarfish(config: StarfishConfig): Promise<SyncStats> {
   try {
-    // Pull any new batches from the Starfish server
-    const stats = await syncParquetCache(config);
-    // Re-download files already in the manifest but not in the in-memory registry
-    // (e.g. after a page reload — the registry is ephemeral, the manifest persists in localStorage)
-    await rehydrateRegistry(config);
+    // Pull new batches for each configured app
+    for (const app of config.apps) await syncApp(config, app);
+    // Fill registry from IndexedDB (or network fallback) for files already in manifests
+    for (const app of config.apps) await rehydrateApp(config, app);
+    const stats = computeSyncStats(config.apps);
     await setupStarfishCache(config, stats);
     await testConnection();
     return stats;
@@ -194,13 +203,13 @@ export async function configureStarfish(config: StarfishConfig): Promise<SyncSta
   }
 }
 
-/** Re-sync Starfish (pull new batches, rebuild macro). */
+/** Re-sync Starfish (pull new batches for all apps, rebuild macro). */
 export async function resyncStarfish(): Promise<SyncStats> {
   if (!_starfishConf) throw new Error('Not connected to Starfish');
   const config = _starfishConf;
   try {
-    const stats = await syncParquetCache(config);
-    // Re-setup with the updated file list
+    for (const app of config.apps) await syncApp(config, app);
+    const stats = computeSyncStats(config.apps);
     await setupStarfishCache(config, stats);
     await testConnection();
     _syncStats = stats;
@@ -211,20 +220,72 @@ export async function resyncStarfish(): Promise<SyncStats> {
   }
 }
 
+/** Add an app slug to the active Starfish connection and sync it incrementally. */
+export async function addStarfishApp(app: string): Promise<SyncStats> {
+  if (!_starfishConf) throw new Error('Not connected to Starfish');
+  const slug = app.trim();
+  if (!slug) throw new Error('App slug is required');
+  if (_starfishConf.apps.includes(slug)) return _syncStats!;
+  if (_starfishBusy) throw new Error('Another app operation is in progress');
+  _starfishBusy = true;
+  try {
+    const next = { ..._starfishConf, apps: [..._starfishConf.apps, slug] };
+    // Pull new batches then fill registry (IDB-first) for the new app only.
+    // _starfishConf is only updated after a successful sync so a failure leaves state intact.
+    await syncApp(next, slug);
+    await rehydrateApp(next, slug);
+    _starfishConf = next;
+    const stats = computeSyncStats(next.apps);
+    await setupStarfishCache(next, stats);
+    await testConnection();
+    _syncStats = stats;
+    return stats;
+  } finally {
+    _starfishBusy = false;
+  }
+}
+
+/** Remove an app slug from the active Starfish connection and evict its data. */
+export async function removeStarfishApp(app: string): Promise<SyncStats> {
+  if (!_starfishConf) throw new Error('Not connected to Starfish');
+  if (!_starfishConf.apps.includes(app)) return _syncStats!;
+  if (_starfishConf.apps.length <= 1) throw new Error('At least one app slug is required');
+  if (_starfishBusy) throw new Error('Another app operation is in progress');
+  _starfishBusy = true;
+  try {
+    clearRegistryApp(app);
+    clearManifest(app);
+    await idbClearApp(app);
+    const next = { ..._starfishConf, apps: _starfishConf.apps.filter((a) => a !== app) };
+    _starfishConf = next;
+    const stats = computeSyncStats(next.apps);
+    // dropFiles() inside setupStarfishCache evicts the removed app's Parquet from DuckDB's virtual FS.
+    await setupStarfishCache(next, stats);
+    await testConnection();
+    _syncStats = stats;
+    return stats;
+  } finally {
+    _starfishBusy = false;
+  }
+}
+
 /** Probe read access — succeeds even when there are zero Parquet files. */
 export async function testConnection(): Promise<void> {
   await conn().query(`SELECT count(*) AS n FROM events()`);
 }
 
-/** Clear the DuckDB connection and in-memory state. */
+/** Clear the DuckDB connection and all in-memory + persistent state. */
 export async function resetDb(): Promise<void> {
   await resetConnection();
   clearRegistry();
+  clearAllManifests();
+  await idbClearAll();
   _dataSource   = null;
   _s3Config     = null;
   _starfishConf = null;
   _syncStats    = null;
   _lastError    = null;
+  _starfishBusy = false;
 }
 
 // ── Query execution ───────────────────────────────────────────────────────────

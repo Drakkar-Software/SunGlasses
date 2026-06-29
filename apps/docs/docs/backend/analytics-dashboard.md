@@ -5,25 +5,24 @@ title: Analytics Dashboard
 
 # Analytics Dashboard
 
-A read-only analytics dashboard that queries SunGlasses events stored as **Parquet** — either directly from S3 (ingest server / MinIO) or via **Starfish local-sync** when the object store is not publicly reachable (Infra sync + private Garage).
+A read-only analytics dashboard that queries SunGlasses events stored as **Parquet** — either directly from S3/MinIO or via **Starfish local-sync**. All queries run in **DuckDB-WASM** inside the browser; no backend is required.
 
 ```
-ingest-server / Starfish adapter  ──writes──▶  S3 Parquet (internal)
-                                                    │
-Starfish /v1/analytics  ◀── list + pull (admin) ────┘
-        │
-analytics-dashboard  ◀── local cache + DuckDB read_parquet
-        │
-        ├── Fastify query API  /api/*
-        └── React + Recharts UI
+SunGlasses client  ──push──▶  Starfish /v1/analytics  ──▶  object store
+                                                                │
+ingest-server      ──flush──▶  S3/MinIO  ──────────────────────┘
+                                                                │
+        analytics-dashboard (browser)  ──DuckDB-WASM──▶  read_parquet
 ```
 
 ## Prerequisites
 
-- Node.js 20+
-- pnpm 9+
-- **Direct S3:** populated prefix + credentials (see [ingest server](/backend/ingest-server))
-- **Starfish:** running Infra sync with `/v1/analytics`, `listable` events collection, platform admin cap-cert, and `starfish-events` ≥ 3.0.0-alpha.44 (Parquet pull via `interceptPull` hook)
+- Node.js 20+ and pnpm 9+ (dev only)
+- A populated Parquet dataset
+
+**Starfish mode:** a running Starfish sync server with `starfish-events` ≥ 3.0.0-alpha.44, analytics collection with `listable: true`, and either admin cap-cert or public read enabled.
+
+**Direct S3 mode:** the bucket must allow the browser origin via **CORS** (see the dashboard README for the bucket CORS policy).
 
 ## Setup
 
@@ -32,148 +31,52 @@ pnpm install
 pnpm --filter analytics-dashboard dev
 ```
 
-On first open, choose **Starfish** or **Direct S3** in the setup screen.
-
-- **API:** http://localhost:8788
-- **Dev UI (Vite):** http://localhost:5174 — proxies `/api` to the server
+Open http://localhost:5174, choose **Starfish** or **Direct S3**, and enter credentials.
 
 ## Data sources
 
-### Starfish (recommended when S3 is private)
+### Starfish local-sync
 
 Use when Garage/S3 is internal-only and the public entry point is the sync server.
 
 1. Wire the analytics namespace on your sync server (`listable: true`, and either `read_roles: ["admin"]` with a platform admin enricher, or `read_roles: ["public"]` for unauthenticated reads).
-2. In the dashboard UI, select **Starfish** and provide:
-   - **Sync base URL** — e.g. `https://sync.example.com/v1/analytics`
-   - **App slug** — e.g. `octochat` (matches `StarfishAnalyticsAdapter` `app`)
-   - **Admin cap-cert** + **device Ed25519 private key (hex)** — when `read_roles` includes `admin`; or enable **Public read** when the collection allows anonymous list/pull
-3. The server lists batches (`GET /list/events/{app}`), pulls Parquet (`GET /pull/events/{app}/{batchId}`), caches under `.parquet-cache/`, and runs DuckDB locally.
+2. In the dashboard setup screen, select **Starfish** and provide:
+   - **Sync base URL** — full external API root including the `/sync/v1/<namespace>` prefix, e.g. `https://sync.example.com/sync/v1/analytics`. Do not enter the bare host.
+   - **App slugs** — one or more slugs comma-separated, e.g. `my-app, other-app` (matches the `app` field on the `SunglassesAnalyticsAdapter`).
+   - **Admin cap-cert** + **device Ed25519 private key (hex)** — when `read_roles` includes `admin`; or enable **Public read** when the collection allows anonymous list/pull.
+3. The browser lists batches (`GET /list/events/{app}`), pulls Parquet bytes into browser memory, registers them with DuckDB-WASM, and queries across all configured apps combined.
 
-Click **Refresh data** in the header after new events are ingested.
+Click **Refresh data** to pull new batches.
 
-Settings persist to `.starfish-config.local.json` (gitignored).
+**Multiple apps:** all configured apps are synced and aggregated. Use the **app filter dropdown** in the top bar to narrow to a single app. After connecting you can also add or remove apps live from the sidebar without reconnecting.
 
-Optional env auto-connect (admin cap-cert):
+### Persistent local cache (IndexedDB)
 
-```bash
-STARFISH_CONFIGURE_FROM_ENV=true
-STARFISH_BASE_URL=http://localhost:3000/v1/analytics
-STARFISH_APP=octochat
-STARFISH_CAP_PATH=./admin.cap.json
-STARFISH_DEV_ED_PRIV_HEX=…
-```
+Parquet batch bytes are cached in **IndexedDB** (`sunglasses-dashboard` database, `parquet` store), keyed per app. On reload the dashboard reads bytes from IndexedDB first and only downloads batches that are genuinely new — eliminating full re-downloads on every page load.
 
-Public read (no cap-cert):
-
-```bash
-STARFISH_CONFIGURE_FROM_ENV=true
-STARFISH_PUBLIC_READ=true
-STARFISH_BASE_URL=http://localhost:3000/v1/analytics
-STARFISH_APP=octochat
-```
+A per-app manifest in `localStorage` (`starfish-manifest-{app}`) tracks which filenames have been synced. Disconnecting (clicking "Change connection") clears both the manifests and the IndexedDB byte cache so data does not linger.
 
 ### Direct S3
 
-Use for local MinIO or when DuckDB can reach the bucket with `httpfs`.
+DuckDB-WASM loads the `httpfs` extension and reads Parquet directly from `s3://<bucket>/<prefix>/**/*.parquet`. Provide explicit access keys (IAM / credential-chain is not available in the browser).
 
-```bash
-docker run -d --name sunglasses-minio -p 9000:9000 -p 9001:9001 \
-  -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-  minio/minio server /data --console-address ":9001"
-```
-
-Set `S3_CONFIGURE_FROM_ENV=true` and the same `S3_*` / `AWS_*` vars as the [ingest server](/backend/ingest-server). Settings persist to `.s3-config.local.json`.
+For MinIO or other S3-compatible stores, set the **Custom endpoint URL** in the setup form.
 
 ## Production
 
 ```bash
 pnpm --filter analytics-dashboard build
-pnpm --filter analytics-dashboard start
 ```
 
-## Environment variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8788` | HTTP port |
-| `S3_CONFIGURE_FROM_ENV` | — | Opt-in direct S3 from env |
-| `S3_BUCKET`, `S3_PREFIX`, `AWS_*`, `ENDPOINT_URL` | — | Direct S3 mode |
-| `STARFISH_CONFIGURE_FROM_ENV` | — | Opt-in Starfish from env |
-| `STARFISH_PUBLIC_READ` | — | Unauthenticated list/pull (no cap-cert) |
-| `STARFISH_BASE_URL` | — | Analytics namespace URL |
-| `STARFISH_APP` | — | App slug under `events/{app}/` |
-| `STARFISH_CAP_PATH` / `STARFISH_CAP_JSON` | — | Admin cap-cert |
-| `STARFISH_DEV_ED_PRIV_HEX` | — | Signing key for cap requests |
-| `STARFISH_CACHE_DIR` | `.parquet-cache/{app}` | Local Parquet cache |
-
-## API endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/config/status` | Connection status (no secrets) |
-| `POST` | `/api/config` | Configure Starfish or direct S3 |
-| `DELETE` | `/api/config` | Clear configuration |
-| `POST` | `/api/sync` | Incremental Starfish Parquet sync |
-| `GET` | `/api/overview` | KPI totals |
-| `GET` | `/api/timeseries` | Daily event volume |
-| `GET` | `/api/events/top` | Top events |
-| `GET` | `/api/screens/top` | Top screens |
-| `GET` | `/api/errors/top` | Top errors |
-| `GET` | `/api/dau` | Daily active users |
-| `GET` | `/api/retention` | Day-N retention |
-| `POST` | `/api/query` | Ad-hoc read-only SQL |
-
-### `POST /api/config` — Starfish (admin cap-cert)
-
-```json
-{
-  "source": "starfish",
-  "baseUrl": "https://sync.example.com/v1/analytics",
-  "app": "octochat",
-  "cap": "{ … CapCert JSON … }",
-  "devEdPrivHex": "…"
-}
-```
-
-### `POST /api/config` — Starfish (public read)
-
-```json
-{
-  "source": "starfish",
-  "baseUrl": "https://sync.example.com/v1/analytics",
-  "app": "octochat",
-  "publicRead": true
-}
-```
-
-### `POST /api/config` — Direct S3
-
-```json
-{
-  "source": "direct_s3",
-  "s3Bucket": "my-bucket",
-  "s3Prefix": "events/octochat",
-  "awsRegion": "garage",
-  "accessKeyId": "…",
-  "secretAccessKey": "…",
-  "endpointUrl": "http://localhost:3900"
-}
-```
+The output (`dist/`) is a small static SPA. Deploy to any static host (Cloudflare Workers, Vercel, Netlify, an S3 bucket). The DuckDB WASM bundles are fetched from `cdn.jsdelivr.net` on first use — the browser must be able to reach that CDN.
 
 ## Privacy
 
-- Server logs aggregate counts only — never `distinct_id`, `properties`, or `context`.
-- Cap private keys are stored server-side in `.starfish-config.local.json` (mode `0600`) — do not commit.
-- The **Query** tab can expose raw columns. Do not expose on untrusted networks without authentication.
-
-## Data lag
-
-- **Direct S3:** reads flushed Parquet only (ingest staging lag applies).
-- **Starfish:** reflects the last sync; use **Refresh data** after ingestion.
+- DAU and retention queries use `anonymous_id` — never `distinct_id`, raw user traits, or PII.
+- Parquet bytes are cached locally in IndexedDB and cleared on disconnect. No event data is sent to any server.
+- The **Query** tab runs arbitrary `SELECT`/`WITH` against your data and can expose raw columns. Deploy for yourself or trusted users only.
 
 ## Related
 
-- [Ingest server](/backend/ingest-server)
 - [Starfish adapter](/adapters/starfish)
 - [Local testing with MinIO](/backend/local-testing)

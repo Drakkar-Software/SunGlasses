@@ -77,7 +77,7 @@ import type { CapCert } from '@drakkar.software/starfish-protocol';
 
 export interface StarfishConfig {
   baseUrl:      string;
-  app:          string;
+  apps:         string[];
   /** When true, list/pull require no cap-cert. */
   publicRead:   boolean;
   cap?:         CapCert;
@@ -87,7 +87,9 @@ export interface StarfishConfig {
 export interface StarfishConfigInput {
   source?:       'starfish';
   baseUrl?:      string;
+  /** Legacy single-app input — normalised to `apps` by parseStarfishInput. */
   app?:          string;
+  apps?:         string[];
   publicRead?:   boolean;
   cap?:          CapCert | string;
   devEdPrivHex?: string;
@@ -104,13 +106,14 @@ export function parseStarfishInput(body: StarfishConfigInput): StarfishConfig | 
   const baseUrl = body.baseUrl?.trim() ?? '';
   if (!baseUrl) return 'Starfish base URL is required';
 
-  const app = body.app?.trim() ?? '';
-  if (!app) return 'App slug is required (e.g. octochat)';
+  const rawApps = body.apps ?? (body.app != null ? [body.app] : []);
+  const apps    = Array.from(new Set(rawApps.map((s) => s.trim()).filter(Boolean)));
+  if (apps.length === 0) return 'At least one app slug is required (e.g. octochat)';
 
   const publicRead = body.publicRead === true;
 
   if (publicRead) {
-    return { baseUrl: baseUrl.replace(/\/$/, ''), app, publicRead: true };
+    return { baseUrl: baseUrl.replace(/\/$/, ''), apps, publicRead: true };
   }
 
   const devEdPrivHex = body.devEdPrivHex?.trim() ?? '';
@@ -131,7 +134,7 @@ export function parseStarfishInput(body: StarfishConfigInput): StarfishConfig | 
 
   return {
     baseUrl: baseUrl.replace(/\/$/, ''),
-    app,
+    apps,
     publicRead: false,
     cap,
     devEdPrivHex,
@@ -155,7 +158,7 @@ export interface ConfigStatus {
   authMode:           'keys' | 'none';
   // starfish
   baseUrl:            string | null;
-  app:                string | null;
+  apps:               string[];
   cacheDir:           null; // always null in browser mode (no local fs)
   starfishPublicRead: boolean;
   sync:               SyncStats | null;
@@ -177,7 +180,7 @@ export function statusForS3(
     endpointUrl:        config?.endpointUrl || null,
     authMode:           config ? 'keys' : 'none',
     baseUrl:            null,
-    app:                null,
+    apps:               [],
     cacheDir:           null,
     starfishPublicRead: false,
     sync:               null,
@@ -193,15 +196,15 @@ export function statusForStarfish(
   return {
     ready,
     dataSource:         config ? 'starfish' : null,
-    source:             config ? `starfish://${config.app} @ ${config.baseUrl}` : null,
+    source:             config ? `starfish://${config.apps.join(', ')} @ ${config.baseUrl}` : null,
     error,
     bucket:             null,
-    prefix:             config ? `events/${config.app}` : 'events',
+    prefix:             config ? `events/${config.apps.join(',')}` : 'events',
     region:             '',
     endpointUrl:        null,
     authMode:           'none',
     baseUrl:            config?.baseUrl ?? null,
-    app:                config?.app ?? null,
+    apps:               config?.apps ?? [],
     cacheDir:           null,
     starfishPublicRead: config?.publicRead ?? false,
     sync,

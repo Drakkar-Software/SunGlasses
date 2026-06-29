@@ -69,7 +69,9 @@ Add the dashboard origin to your Starfish server's `cors.allowedOrigins` config 
 2. The `starfish-events` plugin stores Parquet at `events/{app}/{batchId}.parquet`.
 3. The dashboard lists batches, pulls Parquet bytes into browser memory, registers them with DuckDB-WASM, and queries across them.
 
-Click **Refresh data** to pull new batches. The sync is incremental: already-downloaded batches are skipped (tracked in `localStorage`).
+Click **Refresh data** to pull new batches. The sync is incremental: already-downloaded batches are skipped (tracked in a per-app manifest in `localStorage`). Parquet bytes are also cached in **IndexedDB** — on reload the dashboard reads bytes from IndexedDB first and only downloads batches that are genuinely new, eliminating redundant network traffic.
+
+**Multiple app slugs:** enter several slugs comma-separated in the "App slugs" field (e.g. `my-app, other-app`). All configured apps are synced and their data is aggregated. Use the **app filter dropdown** in the top bar to narrow charts and tables to a single app. Apps can also be added or removed live from the sidebar without reconnecting.
 
 **Base URL format:** enter the full external API root including the `/sync/v1/<namespace>` prefix, e.g. `https://sync.example.com/sync/v1/analytics`. The dashboard then appends `/list/events/<app>` and `/pull/events/<app>/<id>` automatically. Entering the bare host without the namespace prefix will hit nginx's 404 catch-all and surface in the browser as a misleading CORS error. For the `events` collection when `read_roles: ["public"]`, enable **Public read** in the form (no cap-cert required).
 
@@ -99,6 +101,7 @@ Deploy to any static host (Cloudflare Workers, Vercel, Netlify, an S3 bucket).
 
 - DAU and retention queries use `anonymous_id` — never `distinct_id`, raw user traits, or PII.
 - The **Query** tab runs arbitrary `SELECT`/`WITH` against your Parquet data and can expose raw columns. Deploy for yourself or trusted users only.
+- Parquet batch bytes are cached locally in **IndexedDB** (`sunglasses-dashboard` database). The cache is cleared automatically when you disconnect (click "Change connection"). No event data is sent to any server — DuckDB-WASM connects directly.
 
 ## Dependencies
 

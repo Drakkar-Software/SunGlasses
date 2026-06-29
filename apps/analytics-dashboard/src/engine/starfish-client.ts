@@ -88,10 +88,11 @@ async function starfishGet(
 /** Paginated list of batch IDs under `events/{app}/`. */
 export async function listBatches(
   config: StarfishConfig,
+  app:    string,
   opts?:  { after?: string; limit?: number },
 ): Promise<ListBatchesResult> {
   const limit = opts?.limit ?? 100;
-  let path = `/list/events/${encodeURIComponent(config.app)}?limit=${limit}`;
+  let path = `/list/events/${encodeURIComponent(app)}?limit=${limit}`;
   if (opts?.after) path += `&after=${encodeURIComponent(opts.after)}`;
 
   const res = await starfishGet(config, path, 'application/json');
@@ -105,10 +106,11 @@ export async function listBatches(
 /** Pull one Parquet batch file. Returns raw ArrayBuffer + optional ETag. */
 export async function pullBatch(
   config:  StarfishConfig,
+  app:     string,
   batchId: string,
 ): Promise<{ data: ArrayBuffer; etag: string | null }> {
   const id   = batchId.endsWith('.parquet') ? batchId.slice(0, -'.parquet'.length) : batchId;
-  const path = `/pull/events/${encodeURIComponent(config.app)}/${encodeURIComponent(id)}`;
+  const path = `/pull/events/${encodeURIComponent(app)}/${encodeURIComponent(id)}`;
 
   // Public-read: use starfishGet directly so 429 retry applies.
   if (config.publicRead) {
@@ -125,10 +127,10 @@ export async function pullBatch(
   return { data: result.data, etag: result.hash };
 }
 
-/** Verify list/pull access (pulls one file when data exists). */
-export async function testStarfishConnection(config: StarfishConfig): Promise<void> {
-  const page = await listBatches(config, { limit: 1 });
+/** Verify list/pull access for one app slug (pulls one file when data exists). */
+export async function testStarfishConnection(config: StarfishConfig, app: string): Promise<void> {
+  const page = await listBatches(config, app, { limit: 1 });
   if (page.items.length > 0) {
-    await pullBatch(config, page.items[0]!);
+    await pullBatch(config, app, page.items[0]!);
   }
 }

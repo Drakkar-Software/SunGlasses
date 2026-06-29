@@ -1,6 +1,7 @@
 import type { ConfigStatus } from '../api';
 import { ThemeToggle } from './ThemeToggle';
 import { SyncBar } from './DataSourcePanel';
+import { AppManager } from './AppManager';
 
 export type Section = 'overview' | 'events' | 'screens' | 'errors' | 'retention' | 'query';
 
@@ -144,6 +145,7 @@ export function Sidebar({ section, onSection, status, onSynced, onChangeConnecti
 
         {/* Footer */}
         <div className="px-3 py-3 border-t border-white/10 space-y-2">
+          <AppManager status={status} onChanged={onSynced} />
           <SyncBar status={status} onSynced={onSynced} compact />
 
           <div className="flex items-center justify-between">

@@ -13,6 +13,8 @@ import {
   getStarfishConfig,
   getSyncStats,
   queryRaw,
+  addStarfishApp as engineAddStarfishApp,
+  removeStarfishApp as engineRemoveStarfishApp,
 } from './engine/duckdb.js';
 import type { DataSourceKind, ConfigStatus, SyncStats } from './engine/config.js';
 import {
@@ -77,7 +79,9 @@ export interface S3ConfigInput {
 export interface StarfishConfigInput {
   source?:       'starfish';
   baseUrl?:      string;
+  /** Legacy single-app input — normalised to `apps` by parseStarfishInput. */
   app?:          string;
+  apps?:         string[];
   publicRead?:   boolean;
   cap?:          string;
   devEdPrivHex?: string;
@@ -99,7 +103,9 @@ export interface BrowserConfig {
   secretAccessKey?: string;
   endpointUrl?:     string;
   baseUrl?:         string;
+  /** Legacy single-app field — kept for reading old sessionStorage; writes use `apps`. */
   app?:             string;
+  apps?:            string[];
   publicRead?:      boolean;
   capJson?:         string;
   devEdPrivHex?:    string;
@@ -109,7 +115,12 @@ export function loadBrowserConfig(): BrowserConfig | null {
   try {
     const raw = sessionStorage.getItem(BROWSER_CONFIG_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as BrowserConfig;
+    const cfg = JSON.parse(raw) as BrowserConfig;
+    // Migration: old sessions stored a single `app` string; normalise to `apps` array.
+    if (!cfg.apps && typeof cfg.app === 'string' && cfg.app) {
+      cfg.apps = [cfg.app];
+    }
+    return cfg;
   } catch {
     return null;
   }
@@ -128,8 +139,9 @@ export function canAutoConnectFromBrowser(): boolean {
   const c = loadBrowserConfig();
   if (!c?.remember) return false;
   if (c.mode === 'starfish') {
-    if (c.publicRead) return Boolean(c.baseUrl && c.app);
-    return Boolean(c.baseUrl && c.app && c.capJson && c.devEdPrivHex);
+    const hasApps = !!(c.apps?.length);
+    if (c.publicRead) return Boolean(c.baseUrl && hasApps);
+    return Boolean(c.baseUrl && hasApps && c.capJson && c.devEdPrivHex);
   }
   if (!c.s3Bucket) return false;
   return Boolean(c.accessKeyId && c.secretAccessKey);
@@ -148,7 +160,7 @@ const DEFAULT_CONFIG_STATUS: ConfigStatus = {
   endpointUrl:        null,
   authMode:           'none',
   baseUrl:            null,
-  app:                null,
+  apps:               [],
   cacheDir:           null,
   starfishPublicRead: false,
   sync:               null,
@@ -184,7 +196,7 @@ export async function saveConfig(input: ConfigInput): Promise<ConfigStatus> {
     saveBrowserConfig({
       mode:        'starfish',
       baseUrl:     parsed.baseUrl,
-      app:         parsed.app,
+      apps:        parsed.apps,
       publicRead:  parsed.publicRead,
       capJson:     parsed.publicRead ? undefined : (typeof (input as StarfishConfigInput).cap === 'string' ? (input as StarfishConfigInput).cap as string : undefined),
       devEdPrivHex:parsed.publicRead ? undefined : parsed.devEdPrivHex,
@@ -224,6 +236,24 @@ export async function clearConfig(): Promise<void> {
 export async function triggerSync(): Promise<ConfigStatus> {
   const stats = await resyncStarfish();
   return statusForStarfish(getStarfishConfig(), true, null, stats);
+}
+
+/** Add an app slug to the active Starfish connection and persist the updated list. */
+export async function addStarfishApp(app: string): Promise<ConfigStatus> {
+  const stats = await engineAddStarfishApp(app);
+  const cfg   = getStarfishConfig();
+  const b     = loadBrowserConfig();
+  if (b && cfg) saveBrowserConfig({ ...b, apps: cfg.apps });
+  return statusForStarfish(cfg, true, null, stats);
+}
+
+/** Remove an app slug from the active Starfish connection and persist the updated list. */
+export async function removeStarfishApp(app: string): Promise<ConfigStatus> {
+  const stats = await engineRemoveStarfishApp(app);
+  const cfg   = getStarfishConfig();
+  const b     = loadBrowserConfig();
+  if (b && cfg) saveBrowserConfig({ ...b, apps: cfg.apps });
+  return statusForStarfish(cfg, true, null, stats);
 }
 
 // ── Fetch functions (query → engine/queries) ──────────────────────────────────
