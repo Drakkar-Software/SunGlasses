@@ -30,20 +30,20 @@ jobs:
         with:
           node-version: "22"
           cache: pnpm
-          cache-dependency-path: website/pnpm-lock.yaml
+          cache-dependency-path: apps/docs/pnpm-lock.yaml
 
       - name: Install dependencies
-        working-directory: website
+        working-directory: apps/docs
         run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Build website
-        working-directory: website
+        working-directory: apps/docs
         run: pnpm build
 
       - name: Upload build artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: website/build
+          path: apps/docs/build
 
   deploy:
     name: Deploy to GitHub Pages

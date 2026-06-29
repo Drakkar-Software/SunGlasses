@@ -82,15 +82,15 @@ pnpm --filter @drakkar.software/sunglasses-core add -D some-dev-package
 
 ## Documentation — Always Update
 
-Every change that affects public API, config options, behavior, or user-facing features **must** update both `CHANGELOG.md` and `website/docs/` in the same PR or commit. Do not treat implementation as complete until docs are in sync.
+Every change that affects public API, config options, behavior, or user-facing features **must** update both `CHANGELOG.md` and `apps/docs/docs/` in the same PR or commit. Do not treat implementation as complete until docs are in sync.
 
 ### `CHANGELOG.md`
 
 Add entries under `## [Unreleased]` using [Keep a Changelog](https://keepachangelog.com/) sections (`Added`, `Changed`, `Fixed`, `Removed`). Prefix each bullet with the affected package(s), e.g. `(@drakkar.software/sunglasses-core)`. Match the style of existing entries — full sentences, enough detail for consumers to understand what changed and why.
 
-### `website/docs/`
+### `apps/docs/docs/`
 
-The Docusaurus site lives in `website/`. Update the page(s) that cover what changed:
+The Docusaurus site lives in `apps/docs/`. Update the page(s) that cover what changed:
 
 | Area | When to update |
 |------|----------------|
@@ -112,7 +112,7 @@ Purely internal refactors with zero public impact may omit doc updates; when in 
 ## Making a Release
 
 ```bash
-# 1. Confirm CHANGELOG [Unreleased] and website/docs/ are already updated (see above)
+# 1. Confirm CHANGELOG [Unreleased] and apps/docs/docs/ are already updated (see above)
 pnpm changeset           # prompts which packages changed and severity (major/minor/patch)
 
 # 2. Apply version bumps and generate per-package CHANGELOG entries

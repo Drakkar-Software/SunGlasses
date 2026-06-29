@@ -17,8 +17,8 @@
     "version": "changeset version",
     "release": "turbo run build && changeset publish",
     "publish:all": "turbo run build && pnpm -r publish --access public",
-    "docs:dev": "pnpm --dir website start",
-    "docs:build": "pnpm --dir website build"
+    "docs:dev": "pnpm --dir apps/docs start",
+    "docs:build": "pnpm --dir apps/docs build"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.9",
