@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/sunglasses-react-native",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "React Native / Expo provider and hooks for SunGlasses event tracking",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -8,6 +8,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "react-native": "./dist/index.js",
+      "browser": "./dist/index.js",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
     }

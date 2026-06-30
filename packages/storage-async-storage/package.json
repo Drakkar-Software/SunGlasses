@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/sunglasses-storage-async-storage",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "AsyncStorage adapter for SunGlasses (React Native / Expo)",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

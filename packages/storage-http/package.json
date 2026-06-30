@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/sunglasses-storage-http",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Batched HTTP push analytics adapter for SunGlasses",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
