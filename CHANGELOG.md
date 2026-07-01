@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Analytics dashboard — incremental Starfish listing** (`apps/analytics-dashboard`): each sync now resumes `/list` from the last successfully-synced batch id (persisted per app in the existing `localStorage` manifest as `listCursor`) instead of re-walking the entire batch list on every connect and every "Refresh data" click. In steady state (no new data) a sync now issues one `/list` call per app instead of paging through the whole collection. The cursor only advances after every corresponding batch has downloaded successfully, so a partial-download failure resumes cleanly on the next sync rather than skipping the missed batches. This requires a Starfish sync server running `starfish-events` v3.0.0-alpha.62+, which assigns a server-clock-derived, lexicographically-sortable batch id (previously a client-minted random UUID, which can't safely support a resumable cursor — batches are pushed from many end-user devices with untrusted clocks). Older servers are unaffected: the cursor simply never advances and every sync remains a full scan, as before.
+- **`@drakkar.software/sunglasses-adapter-starfish`**: documented that Starfish's `starfish-events` server plugin (v3.0.0-alpha.62+) assigns the authoritative Parquet batch id server-side and ignores the client-generated `{batchId}` placeholder in the push URL. No adapter behavior changes — `send()` is unaffected — this is purely a documentation update to `StarfishAdapterConfig.pathTemplate`.
+
 ## [0.14.0] — 2026-06-30
 
 ### Added

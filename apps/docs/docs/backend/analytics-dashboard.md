@@ -20,7 +20,7 @@ ingest-server      ──flush──▶  S3/MinIO  ─────────�
 - Node.js 20+ and pnpm 9+ (dev only)
 - A populated Parquet dataset
 
-**Starfish mode:** a running Starfish sync server with `starfish-events` ≥ 3.0.0-alpha.44, analytics collection with `listable: true`, and either admin cap-cert or public read enabled.
+**Starfish mode:** a running Starfish sync server with `starfish-events` ≥ 3.0.0-alpha.44, analytics collection with `listable: true`, and either admin cap-cert or public read enabled. `starfish-events` ≥ 3.0.0-alpha.62 additionally assigns a server-side sortable batch id, which the dashboard uses to sync incrementally (see step 3 below) — on an older server, syncing still works but always re-lists the full batch history.
 
 **Direct S3 mode:** the bucket must allow the browser origin via **CORS** (see the dashboard README for the bucket CORS policy).
 
@@ -46,7 +46,7 @@ Use when Garage/S3 is internal-only and the public entry point is the sync serve
    - **Admin cap-cert** + **device Ed25519 private key (hex)** — when `read_roles` includes `admin`; or enable **Public read** when the collection allows anonymous list/pull.
 3. The browser lists batches (`GET /list/events/{app}`), pulls Parquet bytes into browser memory, registers them with DuckDB-WASM, and queries across all configured apps combined.
 
-Click **Refresh data** to pull new batches.
+Click **Refresh data** to pull new batches. Refresh only fetches batches written since the last sync — it resumes `/list` from the last-seen batch id (persisted in the per-app manifest, see below) instead of re-listing the whole collection, so a Refresh with nothing new does a single lightweight `/list` call per app rather than paging through the full history.
 
 **Multiple apps:** all configured apps are synced and aggregated. Use the **app filter dropdown** in the top bar to narrow to a single app. After connecting you can also add or remove apps live from the sidebar without reconnecting.
 
@@ -54,7 +54,7 @@ Click **Refresh data** to pull new batches.
 
 Parquet batch bytes are cached in **IndexedDB** (`sunglasses-dashboard` database, `parquet` store), keyed per app. On reload the dashboard reads bytes from IndexedDB first and only downloads batches that are genuinely new — eliminating full re-downloads on every page load.
 
-A per-app manifest in `localStorage` (`starfish-manifest-{app}`) tracks which filenames have been synced. Disconnecting (clicking "Change connection") clears both the manifests and the IndexedDB byte cache so data does not linger.
+A per-app manifest in `localStorage` (`starfish-manifest-{app}`) tracks which filenames have been synced, plus the incremental-listing cursor (`listCursor` — the last-seen batch id). The cursor only advances once every batch from that sync has downloaded successfully, so an interrupted sync resumes cleanly next time instead of skipping the missed batches. Disconnecting (clicking "Change connection") clears both the manifests and the IndexedDB byte cache so data does not linger.
 
 ### Direct S3
 

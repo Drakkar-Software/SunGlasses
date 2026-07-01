@@ -29,6 +29,14 @@ interface ManifestEntry {
 interface Manifest {
   files:      Record<string, ManifestEntry>;
   lastSyncAt: string | null;
+  /**
+   * High-water `/list` cursor — the last batch id seen across the most recent
+   * fully-successful sync. `null` means "list from the beginning" (first
+   * sync, or an older Starfish server that doesn't assign server-side
+   * sortable batch ids, in which case this just never advances and every
+   * sync stays a full scan — no incorrect behavior, just no speedup).
+   */
+  listCursor: string | null;
 }
 
 function manifestKey(app: string): string {
@@ -42,10 +50,12 @@ function batchFileName(batchId: string): string {
 function loadManifest(app: string): Manifest {
   try {
     const raw = localStorage.getItem(manifestKey(app));
-    if (!raw) return { files: {}, lastSyncAt: null };
-    return JSON.parse(raw) as Manifest;
+    if (!raw) return { files: {}, lastSyncAt: null, listCursor: null };
+    const parsed = JSON.parse(raw) as Partial<Manifest>;
+    // listCursor is a newer field — default to null for a manifest saved before it existed.
+    return { files: parsed.files ?? {}, lastSyncAt: parsed.lastSyncAt ?? null, listCursor: parsed.listCursor ?? null };
   } catch {
-    return { files: {}, lastSyncAt: null };
+    return { files: {}, lastSyncAt: null, listCursor: null };
   }
 }
 
@@ -138,37 +148,67 @@ export function computeSyncStats(apps: string[]): SyncStats {
 
 // ── Per-app sync ──────────────────────────────────────────────────────────────
 
+/** Result of {@link listNewBatchIds}. */
+export interface NewBatchIds {
+  /** Batch ids not yet present in the manifest — these need downloading. */
+  ids: string[];
+  /**
+   * The high-water `/list` cursor after this walk — the last batch id seen,
+   * regardless of whether it was new. `null` if nothing was seen at all
+   * (nothing exists past the manifest's current cursor). Callers must only
+   * persist this once the corresponding downloads have fully succeeded — see
+   * {@link downloadBatchIds}.
+   */
+  nextCursor: string | null;
+}
+
 /**
  * List batch IDs that are not yet in the manifest for one app.
  * Lightweight — only makes list API calls, no downloads.
  * Used by duckdb.ts to compute the grand total before starting downloads.
+ *
+ * Resumes from the manifest's persisted `listCursor` instead of always
+ * walking from the beginning — see `Manifest.listCursor` for why this is
+ * only safe with server-assigned, chronologically-sortable batch ids.
  */
-export async function listNewBatchIds(config: StarfishConfig, app: string): Promise<string[]> {
+export async function listNewBatchIds(config: StarfishConfig, app: string): Promise<NewBatchIds> {
   const manifest    = loadManifest(app);
   const newBatchIds: string[] = [];
-  let after: string | undefined;
+  let after: string | undefined = manifest.listCursor ?? undefined;
+  let lastSeenId: string | undefined;
 
   for (;;) {
     const page = await listBatches(config, app, { after, limit: 100 });
     for (const batchId of page.items) {
       if (!manifest.files[batchFileName(batchId)]) newBatchIds.push(batchId);
     }
+    if (page.items.length > 0) {
+      lastSeenId = page.items[page.items.length - 1]!;
+    }
     if (!page.hasMore || page.items.length === 0) break;
-    after = page.items[page.items.length - 1]!;
+    after = lastSeenId;
   }
 
-  return newBatchIds;
+  return { ids: newBatchIds, nextCursor: lastSeenId ?? manifest.listCursor };
 }
 
 /**
  * Download a pre-computed list of batch IDs for one app and register them.
  * `onEach` fires after each batch is stored; callers use it to track global progress.
+ *
+ * `nextCursor` (from the {@link listNewBatchIds} call that produced `batchIds`)
+ * is only persisted once every batch below has downloaded successfully — a
+ * `pullBatch` throw partway through leaves `listCursor` (and `manifest.files`,
+ * saved together in the same call) untouched, so the next sync resumes from
+ * the old cursor and retries the missing batches instead of silently skipping
+ * them.
  */
 export async function downloadBatchIds(
-  config:   StarfishConfig,
-  app:      string,
-  batchIds: string[],
-  onEach?:  () => void,
+  config:     StarfishConfig,
+  app:        string,
+  batchIds:   string[],
+  nextCursor: string | null,
+  onEach?:    () => void,
 ): Promise<void> {
   if (batchIds.length === 0) return;
 
@@ -190,6 +230,7 @@ export async function downloadBatchIds(
   }
 
   manifest.lastSyncAt = new Date().toISOString();
+  manifest.listCursor = nextCursor;
   saveManifest(app, manifest);
   _registry.set(app, appMap);
 }
@@ -204,9 +245,9 @@ export async function syncApp(
   app:         string,
   onProgress?: (done: number, total: number) => void,
 ): Promise<void> {
-  const newBatchIds = await listNewBatchIds(config, app);
+  const { ids: newBatchIds, nextCursor } = await listNewBatchIds(config, app);
   let done = 0;
-  await downloadBatchIds(config, app, newBatchIds, () => {
+  await downloadBatchIds(config, app, newBatchIds, nextCursor, () => {
     done++;
     onProgress?.(done, newBatchIds.length);
   });

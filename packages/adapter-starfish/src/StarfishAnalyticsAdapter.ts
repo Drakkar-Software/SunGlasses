@@ -74,7 +74,15 @@ export interface StarfishAdapterConfig {
 
   /**
    * Storage-path template. Defaults to `"events/{app}/{batchId}"`.
-   * `{app}` → `config.app`; `{batchId}` → a UUID v4 generated per flush.
+   * `{app}` → `config.app`; `{batchId}` → a UUID v4 generated per flush, used
+   * only as a placeholder in the push URL. Starfish's `starfish-events`
+   * server plugin (v3.0.0-alpha.62+) assigns the *authoritative* batch id
+   * server-side — a lexicographically-sortable id derived from the server
+   * clock — and ignores this client-supplied value. This lets `/list`'s
+   * ascending key order double as a chronological cursor for incremental
+   * sync, which a client-minted id (many devices, untrusted clocks) can't
+   * safely provide. No adapter code changes are needed for this — it's
+   * transparent to `send()`.
    *
    * The server plugin appends `.parquet` automatically, so omit it here.
    */
@@ -125,8 +133,9 @@ export class StarfishAnalyticsAdapter implements IAnalyticsAdapter {
    * Push a batch of events to the Starfish events collection.
    *
    * A unique `batchId` is generated per call, producing a unique storage path
-   * (one Parquet file per flush). `baseHash: null` signals "must not exist" to
-   * Starfish, ensuring no conflict on the unique path.
+   * (one Parquet file per flush) — see {@link StarfishAdapterConfig.pathTemplate}
+   * for why the server may substitute its own id here. `baseHash: null` signals
+   * "must not exist" to Starfish, ensuring no conflict on the unique path.
    *
    * Throws on failure — SunglassesCore keeps the batch in the local queue.
    * Never logs event contents (distinct_id, properties, context).

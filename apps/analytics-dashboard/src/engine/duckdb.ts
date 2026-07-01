@@ -205,16 +205,17 @@ export async function configureStarfish(
 ): Promise<SyncStats> {
   try {
     // Phase 1: list all apps' new batches first so we know the grand total
-    const perApp: Array<{ app: string; ids: string[] }> = [];
+    const perApp: Array<{ app: string; ids: string[]; nextCursor: string | null }> = [];
     for (const app of config.apps) {
-      perApp.push({ app, ids: await listNewBatchIds(config, app) });
+      const { ids, nextCursor } = await listNewBatchIds(config, app);
+      perApp.push({ app, ids, nextCursor });
     }
     const grandTotal = perApp.reduce((s, x) => s + x.ids.length, 0);
 
     // Phase 2: download with accurate global progress (no bar regression between apps)
     let globalDone = 0;
-    for (const { app, ids } of perApp) {
-      await downloadBatchIds(config, app, ids, () => {
+    for (const { app, ids, nextCursor } of perApp) {
+      await downloadBatchIds(config, app, ids, nextCursor, () => {
         globalDone++;
         if (grandTotal > 0) onProgress?.(globalDone, grandTotal);
       });
@@ -238,14 +239,15 @@ export async function resyncStarfish(onProgress?: ProgressFn): Promise<SyncStats
   if (!_starfishConf) throw new Error('Not connected to Starfish');
   const config = _starfishConf;
   try {
-    const perApp: Array<{ app: string; ids: string[] }> = [];
+    const perApp: Array<{ app: string; ids: string[]; nextCursor: string | null }> = [];
     for (const app of config.apps) {
-      perApp.push({ app, ids: await listNewBatchIds(config, app) });
+      const { ids, nextCursor } = await listNewBatchIds(config, app);
+      perApp.push({ app, ids, nextCursor });
     }
     const grandTotal = perApp.reduce((s, x) => s + x.ids.length, 0);
     let globalDone = 0;
-    for (const { app, ids } of perApp) {
-      await downloadBatchIds(config, app, ids, () => {
+    for (const { app, ids, nextCursor } of perApp) {
+      await downloadBatchIds(config, app, ids, nextCursor, () => {
         globalDone++;
         if (grandTotal > 0) onProgress?.(globalDone, grandTotal);
       });
