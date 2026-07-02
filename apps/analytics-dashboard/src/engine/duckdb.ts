@@ -136,9 +136,17 @@ async function setupStarfishCache(
   config:    StarfishConfig,
   syncStats: SyncStats,
 ): Promise<void> {
-  await resetConnection();
-  const db  = await ensureDb();
-  _conn     = await db.connect();
+  const db = await ensureDb();
+  // Reuse the live connection when one exists — never close and reopen it here.
+  // The background resync on reload runs while sections are already querying the
+  // cached data; closing the connection (the old behavior) orphaned their
+  // in-flight prepared statements on the worker, surfacing as
+  // "No prepared statement found with ID". Registering new file buffers and
+  // CREATE OR REPLACE-ing the events() macro on the existing connection is
+  // race-safe: a single DuckDB connection serializes its statements, and a
+  // macro swap never invalidates unrelated prepared statements. A full teardown
+  // still happens explicitly on disconnect via resetDb() → resetConnection().
+  if (!_conn) _conn = await db.connect();
 
   // Register only buffers not yet in DuckDB's virtual FS for this session.
   // registerFileBuffer() transfers (detaches) the ArrayBuffer — calling it twice on the
