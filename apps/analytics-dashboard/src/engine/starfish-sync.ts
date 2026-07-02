@@ -30,11 +30,14 @@ interface Manifest {
   files:      Record<string, ManifestEntry>;
   lastSyncAt: string | null;
   /**
-   * High-water `/list` cursor — the last batch id seen across the most recent
-   * fully-successful sync. `null` means "list from the beginning" (first
-   * sync, or an older Starfish server that doesn't assign server-side
-   * sortable batch ids, in which case this just never advances and every
-   * sync stays a full scan — no incorrect behavior, just no speedup).
+   * High-water `/list` cursor — the last *server-assigned sortable* batch id
+   * seen across the most recent fully-successful sync. `null` means "list
+   * from the beginning" (first sync, or an older Starfish server that doesn't
+   * assign server-side sortable batch ids, in which case this just never
+   * advances and every sync stays a full scan — no incorrect behavior, just
+   * no speedup). Legacy client-minted UUIDs are never stored here (see
+   * {@link isLegacyBatchId}); a legacy cursor persisted by dashboard 0.14.1
+   * is healed to `null` on load.
    */
   listCursor: string | null;
 }
@@ -47,13 +50,40 @@ function batchFileName(batchId: string): string {
   return batchId.endsWith('.parquet') ? batchId : `${batchId}.parquet`;
 }
 
+const LEGACY_UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * True when a batch id is a legacy client-minted random UUID v4 (the adapter's
+ * `generateUUID()` — always lowercase), written before the Starfish server
+ * started assigning sortable ids (`starfish-events` < 3.0.0-alpha.62).
+ *
+ * Legacy ids are uniformly random across the whole lexicographic range, so
+ * they must never become the `/list` resume cursor: a legacy id sorting above
+ * every server-assigned id (which sorts low — server-clock-derived) would make
+ * `after=<cursor>` hide all future batches. A server-assigned sortable id can
+ * never match this shape — v4 means random by definition (and a time-sortable
+ * UUIDv7 carries version nibble `7`, not `4`).
+ */
+export function isLegacyBatchId(id: string): boolean {
+  const bare = id.endsWith('.parquet') ? id.slice(0, -'.parquet'.length) : id;
+  return LEGACY_UUID_V4_RE.test(bare);
+}
+
 function loadManifest(app: string): Manifest {
   try {
     const raw = localStorage.getItem(manifestKey(app));
     if (!raw) return { files: {}, lastSyncAt: null, listCursor: null };
     const parsed = JSON.parse(raw) as Partial<Manifest>;
     // listCursor is a newer field — default to null for a manifest saved before it existed.
-    return { files: parsed.files ?? {}, lastSyncAt: parsed.lastSyncAt ?? null, listCursor: parsed.listCursor ?? null };
+    // Self-heal: dashboard 0.14.1 could persist a legacy client-minted UUID as the
+    // cursor (the lexicographic max of a mixed collection), hiding every batch that
+    // sorts below it — treat such a cursor as "list from the beginning" instead.
+    const cursor = parsed.listCursor ?? null;
+    return {
+      files:      parsed.files ?? {},
+      lastSyncAt: parsed.lastSyncAt ?? null,
+      listCursor: cursor !== null && isLegacyBatchId(cursor) ? null : cursor,
+    };
   } catch {
     return { files: {}, lastSyncAt: null, listCursor: null };
   }
@@ -153,11 +183,13 @@ export interface NewBatchIds {
   /** Batch ids not yet present in the manifest — these need downloading. */
   ids: string[];
   /**
-   * The high-water `/list` cursor after this walk — the last batch id seen,
-   * regardless of whether it was new. `null` if nothing was seen at all
-   * (nothing exists past the manifest's current cursor). Callers must only
-   * persist this once the corresponding downloads have fully succeeded — see
-   * {@link downloadBatchIds}.
+   * The high-water `/list` cursor after this walk — the last *server-assigned
+   * sortable* batch id seen, regardless of whether it was new. Legacy
+   * client-minted UUIDs (see {@link isLegacyBatchId}) are never used: new
+   * server ids sort below them, so a legacy cursor would hide all future
+   * batches. Falls back to the manifest's current cursor when no sortable id
+   * was seen. Callers must only persist this once the corresponding downloads
+   * have fully succeeded — see {@link downloadBatchIds}.
    */
   nextCursor: string | null;
 }
@@ -175,21 +207,22 @@ export async function listNewBatchIds(config: StarfishConfig, app: string): Prom
   const manifest    = loadManifest(app);
   const newBatchIds: string[] = [];
   let after: string | undefined = manifest.listCursor ?? undefined;
-  let lastSeenId: string | undefined;
+  let lastSortableId: string | undefined;
 
   for (;;) {
     const page = await listBatches(config, app, { after, limit: 100 });
     for (const batchId of page.items) {
       if (!manifest.files[batchFileName(batchId)]) newBatchIds.push(batchId);
-    }
-    if (page.items.length > 0) {
-      lastSeenId = page.items[page.items.length - 1]!;
+      // Ascending list order ⇒ the last non-legacy id seen is the max sortable id.
+      if (!isLegacyBatchId(batchId)) lastSortableId = batchId;
     }
     if (!page.hasMore || page.items.length === 0) break;
-    after = lastSeenId;
+    // Pagination must resume from the raw last item of the page (whatever its
+    // id scheme) — only the *persisted* cursor is restricted to sortable ids.
+    after = page.items[page.items.length - 1]!;
   }
 
-  return { ids: newBatchIds, nextCursor: lastSeenId ?? manifest.listCursor };
+  return { ids: newBatchIds, nextCursor: lastSortableId ?? manifest.listCursor };
 }
 
 /**
@@ -202,6 +235,13 @@ export async function listNewBatchIds(config: StarfishConfig, app: string): Prom
  * saved together in the same call) untouched, so the next sync resumes from
  * the old cursor and retries the missing batches instead of silently skipping
  * them.
+ *
+ * When there is nothing to download, the cursor is still persisted if it
+ * advanced: a zero-download walk only observed ids already in
+ * `manifest.files`, so the cursor cannot skip anything. This makes the
+ * legacy-cursor heal in `loadManifest` durable and bootstraps the cursor for
+ * manifests written before it existed, instead of re-walking the full list
+ * on every sync until the next new batch happens to arrive.
  */
 export async function downloadBatchIds(
   config:     StarfishConfig,
@@ -210,10 +250,17 @@ export async function downloadBatchIds(
   nextCursor: string | null,
   onEach?:    () => void,
 ): Promise<void> {
-  if (batchIds.length === 0) return;
-
   const manifest = loadManifest(app);
-  const appMap   = _registry.get(app) ?? new Map<string, Uint8Array>();
+
+  if (batchIds.length === 0) {
+    if (nextCursor !== manifest.listCursor) {
+      manifest.listCursor = nextCursor;
+      saveManifest(app, manifest);
+    }
+    return;
+  }
+
+  const appMap = _registry.get(app) ?? new Map<string, Uint8Array>();
 
   for (const batchId of batchIds) {
     const fileName        = batchFileName(batchId);
