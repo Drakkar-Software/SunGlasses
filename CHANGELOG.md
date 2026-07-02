@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.5] — 2026-07-02
+
+### Changed
+
+- **Analytics dashboard — concurrent Parquet batch downloads with resilient fetch** (`apps/analytics-dashboard`, 0.1.3 → 0.1.4): `downloadBatchIds` now downloads up to 4 batches concurrently per app instead of one at a time (a new `mapWithConcurrency` helper in `src/engine/concurrency.ts`), speeding up first-sync and resync. The authenticated (non-`publicRead`) pull path previously had no 429/5xx retry at all — a single rate-limit response aborted the whole sync; `createStarfishClient()` now wires in the SDK's `createResilientFetch` (exponential backoff honoring `Retry-After`, plus a circuit breaker) and caches one client per connection so retry/breaker state is shared across concurrent downloads. The manifest/cursor persistence contract is unchanged: any batch failure in a sync round still persists nothing, and every batch in that round is retried on the next sync.
+
 ## [0.14.4] — 2026-07-02
 
 ### Fixed

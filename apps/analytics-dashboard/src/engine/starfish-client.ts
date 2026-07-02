@@ -9,6 +9,7 @@
  */
 import { StarfishClient } from '@drakkar.software/starfish-client';
 import type { StarfishCapProvider } from '@drakkar.software/starfish-client';
+import { createResilientFetch } from '@drakkar.software/starfish-client/fetch';
 import {
   HEADER_ACCEPT,
   HEADER_AUTHORIZATION,
@@ -35,14 +36,32 @@ function makeCapProvider(cap: CapCert, devEdPrivHex: string): StarfishCapProvide
   return { getCap: async () => ({ cap, devEdPrivHex }) };
 }
 
+// One StarfishClient (and therefore one CircuitBreaker) per config object, so
+// concurrent pullBatch() calls for the same connection share retry/breaker
+// state — a fresh breaker per call would never accumulate consecutive
+// failures across in-flight requests, defeating its purpose. Keyed by config
+// object identity: `_starfishConf` in duckdb.ts is created once per connect
+// and reused, so this cache naturally invalidates on reconnect/new config.
+const _clients = new WeakMap<StarfishConfig, StarfishClient>();
+
 function createStarfishClient(config: StarfishConfig): StarfishClient {
-  if (config.publicRead) {
-    return new StarfishClient({ baseUrl: config.baseUrl });
-  }
-  return new StarfishClient({
-    baseUrl:     config.baseUrl,
-    capProvider: makeCapProvider(config.cap!, config.devEdPrivHex!),
-  });
+  const cached = _clients.get(config);
+  if (cached) return cached;
+
+  const { fetch: resilientFetch } = createResilientFetch(
+    { maxRetries: 3, initialDelayMs: 500, maxDelayMs: 10_000 },
+    { threshold: 5, cooldownMs: 30_000 },
+  );
+
+  const client = config.publicRead
+    ? new StarfishClient({ baseUrl: config.baseUrl, fetch: resilientFetch })
+    : new StarfishClient({
+        baseUrl:     config.baseUrl,
+        capProvider: makeCapProvider(config.cap!, config.devEdPrivHex!),
+        fetch:       resilientFetch,
+      });
+  _clients.set(config, client);
+  return client;
 }
 
 function sleep(ms: number): Promise<void> {

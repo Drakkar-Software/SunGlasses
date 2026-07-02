@@ -332,4 +332,154 @@ describe('starfish-sync incremental listing', () => {
     expect(mockPullBatch).toHaveBeenCalledTimes(3);
     expect(persistedManifest().listCursor).toBe(SORTABLE_1);
   });
+
+  // ── Bounded-concurrency downloads (downloadBatchIds) ─────────────────────────
+  // Downloads now run via mapWithConcurrency instead of a sequential for-loop.
+  // These tests exercise the concurrency parameter directly and confirm the
+  // all-or-nothing manifest contract still holds when downloads interleave.
+
+  describe('downloadBatchIds concurrency', () => {
+    it('downloads all batches and stores them even with concurrency > batch size', async () => {
+      const { downloadBatchIds } = await import('../engine/starfish-sync.js');
+      mockPullBatch.mockImplementation(async () => fakeBytes());
+      const ids = ['id-1', 'id-2', 'id-3'];
+      let done = 0;
+
+      await downloadBatchIds(CONFIG, APP, ids, 'id-3', () => { done++; }, 10);
+
+      expect(mockPullBatch).toHaveBeenCalledTimes(3);
+      expect(mockIdbPut).toHaveBeenCalledTimes(3);
+      expect(done).toBe(3);
+      expect(persistedManifest().listCursor).toBe('id-3');
+      expect(Object.keys(persistedManifest().files).sort()).toEqual(['id-1.parquet', 'id-2.parquet', 'id-3.parquet']);
+    });
+
+    it('never exceeds the requested concurrency limit for pullBatch calls', async () => {
+      const { downloadBatchIds } = await import('../engine/starfish-sync.js');
+      let active = 0;
+      let peak = 0;
+      mockPullBatch.mockImplementation(async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((r) => setTimeout(r, 5));
+        active--;
+        return fakeBytes();
+      });
+      const ids = Array.from({ length: 12 }, (_, i) => `id-${i}`);
+
+      await downloadBatchIds(CONFIG, APP, ids, 'id-11', undefined, 3);
+
+      expect(peak).toBeLessThanOrEqual(3);
+      expect(peak).toBe(3);
+    });
+
+    it('defaults to DEFAULT_DOWNLOAD_CONCURRENCY (4) when no concurrency argument is passed', async () => {
+      const { downloadBatchIds, DEFAULT_DOWNLOAD_CONCURRENCY } = await import('../engine/starfish-sync.js');
+      expect(DEFAULT_DOWNLOAD_CONCURRENCY).toBe(4);
+
+      let active = 0;
+      let peak = 0;
+      mockPullBatch.mockImplementation(async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((r) => setTimeout(r, 5));
+        active--;
+        return fakeBytes();
+      });
+      const ids = Array.from({ length: 10 }, (_, i) => `id-${i}`);
+
+      await downloadBatchIds(CONFIG, APP, ids, 'id-9');
+
+      expect(peak).toBeLessThanOrEqual(DEFAULT_DOWNLOAD_CONCURRENCY);
+      expect(peak).toBe(DEFAULT_DOWNLOAD_CONCURRENCY);
+    });
+
+    it('one failure among many concurrent downloads still persists nothing (all-or-nothing preserved under concurrency)', async () => {
+      const { downloadBatchIds } = await import('../engine/starfish-sync.js');
+      const ids = Array.from({ length: 8 }, (_, i) => `id-${i}`);
+      mockPullBatch.mockImplementation(async (_config: unknown, _app: unknown, batchId: string) => {
+        if (batchId === 'id-5') throw new Error('mid-pool failure');
+        return fakeBytes();
+      });
+
+      await expect(downloadBatchIds(CONFIG, APP, ids, 'id-7', undefined, 4)).rejects.toThrow('mid-pool failure');
+
+      expect(localStorage.getItem('starfish-manifest-myapp')).toBeNull();
+      // Every id was still attempted (no fail-fast / early cancellation of siblings).
+      expect(mockPullBatch).toHaveBeenCalledTimes(8);
+    });
+
+    it('failure at the very first submitted item does not prevent later items in the pool from running', async () => {
+      const { downloadBatchIds } = await import('../engine/starfish-sync.js');
+      const ids = ['id-0', 'id-1', 'id-2', 'id-3'];
+      mockPullBatch.mockImplementation(async (_config: unknown, _app: unknown, batchId: string) => {
+        if (batchId === 'id-0') throw new Error('first item fails');
+        await new Promise((r) => setTimeout(r, 2));
+        return fakeBytes();
+      });
+
+      await expect(downloadBatchIds(CONFIG, APP, ids, 'id-3', undefined, 2)).rejects.toThrow('first item fails');
+      expect(mockPullBatch).toHaveBeenCalledTimes(4);
+    });
+
+    it('bytes from a partially-successful concurrent download are visible in the in-memory registry despite the throw', async () => {
+      const { downloadBatchIds, getRegisteredFiles } = await import('../engine/starfish-sync.js');
+      const ids = ['id-a', 'id-b', 'id-c'];
+      mockPullBatch.mockImplementation(async (_config: unknown, _app: unknown, batchId: string) => {
+        if (batchId === 'id-c') throw new Error('boom');
+        return fakeBytes();
+      });
+
+      await expect(downloadBatchIds(CONFIG, APP, ids, 'id-c', undefined, 3)).rejects.toThrow('boom');
+
+      const registered = getRegisteredFiles();
+      expect(registered).toContain(`${APP}/id-a.parquet`);
+      expect(registered).toContain(`${APP}/id-b.parquet`);
+      expect(registered).not.toContain(`${APP}/id-c.parquet`);
+    });
+
+    it('a retried call after a partial failure re-downloads every batch, matching the sequential-era contract', async () => {
+      const { downloadBatchIds } = await import('../engine/starfish-sync.js');
+      const ids = ['id-x', 'id-y', 'id-z'];
+      mockPullBatch.mockImplementation(async (_config: unknown, _app: unknown, batchId: string) => {
+        if (batchId === 'id-y') throw new Error('transient');
+        return fakeBytes();
+      });
+
+      await expect(downloadBatchIds(CONFIG, APP, ids, 'id-z', undefined, 3)).rejects.toThrow('transient');
+      mockPullBatch.mockClear();
+      mockPullBatch.mockImplementation(async () => fakeBytes());
+
+      await downloadBatchIds(CONFIG, APP, ids, 'id-z', undefined, 3);
+
+      expect(mockPullBatch).toHaveBeenCalledTimes(3);
+      expect(persistedManifest().listCursor).toBe('id-z');
+    });
+
+    it('preserves result order for onEach progress counting regardless of completion order', async () => {
+      const { downloadBatchIds } = await import('../engine/starfish-sync.js');
+      const ids = ['slow', 'fast-1', 'fast-2'];
+      mockPullBatch.mockImplementation(async (_config: unknown, _app: unknown, batchId: string) => {
+        await new Promise((r) => setTimeout(r, batchId === 'slow' ? 20 : 1));
+        return fakeBytes();
+      });
+      let progressCalls = 0;
+
+      await downloadBatchIds(CONFIG, APP, ids, 'fast-2', () => { progressCalls++; }, 3);
+
+      // onEach fires once per successful item regardless of completion order.
+      expect(progressCalls).toBe(3);
+      expect(Object.keys(persistedManifest().files)).toHaveLength(3);
+    });
+
+    it('a single-item batch with concurrency 1 behaves identically to the old sequential path', async () => {
+      const { downloadBatchIds } = await import('../engine/starfish-sync.js');
+      mockPullBatch.mockImplementation(async () => fakeBytes());
+
+      await downloadBatchIds(CONFIG, APP, ['solo'], 'solo', undefined, 1);
+
+      expect(mockPullBatch).toHaveBeenCalledTimes(1);
+      expect(persistedManifest().listCursor).toBe('solo');
+    });
+  });
 });

@@ -15,6 +15,19 @@
 import type { StarfishConfig, SyncStats } from './config.js';
 import { listBatches, pullBatch } from './starfish-client.js';
 import { idbGet, idbPut, idbClearApp, idbClearAll } from './idb-cache.js';
+import { mapWithConcurrency } from './concurrency.js';
+
+/**
+ * Default number of Parquet batches downloaded concurrently per app in
+ * {@link downloadBatchIds}. Chosen to give a meaningful speedup over fully
+ * sequential downloads while staying low enough that a browser tab issuing
+ * this many concurrent GETs to one origin doesn't look like abuse to a
+ * server-side rate limiter — reduces the chance of triggering a 429 rather
+ * than only reacting to one after the fact. Apps are still synced one at a
+ * time (see duckdb.ts), so this is also the peak concurrent request count to
+ * the backend, not `DEFAULT_DOWNLOAD_CONCURRENCY * apps.length`.
+ */
+export const DEFAULT_DOWNLOAD_CONCURRENCY = 4;
 
 export { idbClearAll };
 
@@ -244,11 +257,12 @@ export async function listNewBatchIds(config: StarfishConfig, app: string): Prom
  * on every sync until the next new batch happens to arrive.
  */
 export async function downloadBatchIds(
-  config:     StarfishConfig,
-  app:        string,
-  batchIds:   string[],
-  nextCursor: string | null,
-  onEach?:    () => void,
+  config:      StarfishConfig,
+  app:         string,
+  batchIds:    string[],
+  nextCursor:  string | null,
+  onEach?:     () => void,
+  concurrency: number = DEFAULT_DOWNLOAD_CONCURRENCY,
 ): Promise<void> {
   const manifest = loadManifest(app);
 
@@ -262,10 +276,10 @@ export async function downloadBatchIds(
 
   const appMap = _registry.get(app) ?? new Map<string, Uint8Array>();
 
-  for (const batchId of batchIds) {
-    const fileName        = batchFileName(batchId);
-    const { data, etag }  = await pullBatch(config, app, batchId);
-    const bytes           = new Uint8Array(data);
+  const results = await mapWithConcurrency(batchIds, concurrency, async (batchId) => {
+    const fileName       = batchFileName(batchId);
+    const { data, etag } = await pullBatch(config, app, batchId);
+    const bytes          = new Uint8Array(data);
     appMap.set(fileName, bytes);
     await idbPut(app, fileName, bytes);
     manifest.files[fileName] = {
@@ -274,12 +288,28 @@ export async function downloadBatchIds(
       bytes:    bytes.byteLength,
     };
     onEach?.();
+  });
+
+  // Bytes already fetched this round are queryable in the current session
+  // immediately, even if a sibling download below fails — the manifest/cursor
+  // (localStorage) are the only state gated on full success.
+  _registry.set(app, appMap);
+
+  const failed = results.find((r) => r.error);
+  if (failed) {
+    // All-or-nothing: manifest.files/listCursor stay exactly as loaded, so
+    // the next sync re-lists and re-downloads every batch in this round
+    // (including ones that just succeeded) rather than silently skipping the
+    // failed one. Bytes already idbPut'd for successful siblings are
+    // harmless orphans — re-idbPut on the retry is an idempotent overwrite.
+    throw failed.error instanceof Error
+      ? failed.error
+      : new Error(`Starfish download failed for ${app}: ${String(failed.error)}`);
   }
 
   manifest.lastSyncAt = new Date().toISOString();
   manifest.listCursor = nextCursor;
   saveManifest(app, manifest);
-  _registry.set(app, appMap);
 }
 
 /**
@@ -291,13 +321,14 @@ export async function syncApp(
   config:      StarfishConfig,
   app:         string,
   onProgress?: (done: number, total: number) => void,
+  concurrency: number = DEFAULT_DOWNLOAD_CONCURRENCY,
 ): Promise<void> {
   const { ids: newBatchIds, nextCursor } = await listNewBatchIds(config, app);
   let done = 0;
   await downloadBatchIds(config, app, newBatchIds, nextCursor, () => {
     done++;
     onProgress?.(done, newBatchIds.length);
-  });
+  }, concurrency);
 
   const manifest = loadManifest(app);
   const skipped  = Object.keys(manifest.files).length - newBatchIds.length;
