@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2] — 2026-07-02
+
+### Fixed
+
+- **Analytics dashboard — incremental sync stopped fetching new data on mixed-history Starfish collections** (`apps/analytics-dashboard`, 0.1.0 → 0.1.1): collections containing both pre-upgrade batches (client-minted random UUID v4 ids, spread across the whole lexicographic range) and post-upgrade batches (server-assigned sortable ids, which sort low) poisoned the incremental-listing cursor introduced in 0.14.1 — the first sync persisted the lexicographic maximum of the whole collection (almost always a legacy UUID) as `listCursor`, and every subsequent sync or "Refresh data" resumed `/list` after it, hiding all newer batches. The cursor now only ever holds server-assigned sortable ids (legacy UUID-shaped ids are never persisted as the cursor), and a poisoned cursor persisted by 0.14.1 is healed automatically on the next sync — no manual action, no re-download, one full re-list. Note on speedup: mixed-history collections regain correctness and keep the download dedupe, but legacy UUIDs sorting above the cursor are re-listed on every sync, so the one-`/list`-call steady state only applies to collections whose batches were all written by `starfish-events` v3.0.0-alpha.62+.
+
 ## [0.14.1] — 2026-07-01
 
 ### Changed
