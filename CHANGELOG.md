@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.4] — 2026-07-02
+
+### Fixed
+
+- **Analytics dashboard — "No prepared statement found with ID" on reload** (`apps/analytics-dashboard`, 0.1.2 → 0.1.3): after 0.14.3 made cached data queryable immediately, the background resync tore down and reopened the DuckDB-WASM connection (via `setupStarfishCache` → `resetConnection`) while mounted sections were already running parameterized queries against it, orphaning their in-flight prepared statements on the worker. `setupStarfishCache` now reuses the live connection — it registers newly-cached file buffers and `CREATE OR REPLACE`s the `events()` macro on the existing connection rather than closing it (a single DuckDB connection serializes its statements, so this is race-safe). A full teardown still happens on disconnect. No data was lost previously — affected queries retried on the next render — but the console errors are gone.
+
 ## [0.14.3] — 2026-07-02
 
 ### Changed
