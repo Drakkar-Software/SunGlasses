@@ -5,6 +5,7 @@
 import {
   configureDirectS3,
   configureStarfish,
+  prepareStarfishFromCache,
   resyncStarfish,
   resetDb,
   isDbReady,
@@ -17,9 +18,11 @@ import {
   removeStarfishApp as engineRemoveStarfishApp,
 } from './engine/duckdb.js';
 import type { ProgressFn } from './engine/duckdb.js';
+import { computeSyncStats } from './engine/starfish-sync.js';
+import { syncStatus } from './engine/sync-status.js';
 
 export type { ProgressFn };
-import type { DataSourceKind, ConfigStatus, SyncStats } from './engine/config.js';
+import type { DataSourceKind, ConfigStatus, SyncStats, S3Config, StarfishConfig } from './engine/config.js';
 import {
   parseS3Input,
   parseStarfishInput,
@@ -169,6 +172,120 @@ const DEFAULT_CONFIG_STATUS: ConfigStatus = {
   sync:               null,
 };
 
+// ── Lazy boot from saved config ───────────────────────────────────────────────
+
+type ParsedSavedConfig =
+  | { kind: 'starfish'; config: StarfishConfig }
+  | { kind: 's3';       config: S3Config };
+
+/** Parse the saved browser config into an engine config, or null when unusable. */
+function parseSavedConfig(): ParsedSavedConfig | null {
+  if (!canAutoConnectFromBrowser()) return null;
+  const saved = loadBrowserConfig();
+  if (!saved) return null;
+
+  if (saved.mode === 'starfish') {
+    const parsed = parseStarfishInput({
+      baseUrl:      saved.baseUrl,
+      apps:         saved.apps,
+      publicRead:   saved.publicRead,
+      cap:          saved.capJson,
+      devEdPrivHex: saved.devEdPrivHex,
+    });
+    return typeof parsed === 'string' ? null : { kind: 'starfish', config: parsed };
+  }
+
+  const parsed = parseS3Input({
+    s3Bucket:        saved.s3Bucket,
+    s3Prefix:        saved.s3Prefix,
+    awsRegion:       saved.awsRegion,
+    accessKeyId:     saved.accessKeyId,
+    secretAccessKey: saved.secretAccessKey,
+    endpointUrl:     saved.endpointUrl,
+  });
+  return typeof parsed === 'string' ? null : { kind: 's3', config: parsed.config };
+}
+
+/**
+ * Status derived from the saved browser config alone — no engine work. Lets
+ * the app shell render immediately on reload while connectLazyFromSaved()
+ * brings the engine up in the background. Null when auto-connect isn't
+ * possible (no saved config, or credentials not remembered).
+ */
+export function optimisticStatusFromSaved(): ConfigStatus | null {
+  const parsed = parseSavedConfig();
+  if (!parsed) return null;
+  if (parsed.kind === 'starfish') {
+    // Sync stats come straight from the localStorage manifests — synchronous.
+    return statusForStarfish(parsed.config, true, null, computeSyncStats(parsed.config.apps));
+  }
+  return statusForS3(parsed.config, true, null);
+}
+
+let _lazyConnect: Promise<ConfigStatus | null> | null = null;
+
+/**
+ * Connect in the background from the saved browser config.
+ *
+ * Starfish: registers IndexedDB-cached batches first (fast, local) so cached
+ * data is queryable right away, then downloads new batches, reporting
+ * progress to the sync-status store. A download failure keeps the cached
+ * data usable and only surfaces in the store. Direct S3: configures the
+ * engine and probes the bucket (no data download).
+ *
+ * Resolves with the final status, or null when there is no usable saved
+ * config. Throws when the engine could not become ready at all (bad config,
+ * unreachable server with no cache). Idempotent — concurrent callers (React
+ * StrictMode double-mount) share one connection attempt.
+ */
+export function connectLazyFromSaved(): Promise<ConfigStatus | null> {
+  _lazyConnect ??= doConnectLazyFromSaved().catch((e: unknown) => {
+    _lazyConnect = null; // allow a retry on the next boot
+    throw e;
+  });
+  return _lazyConnect;
+}
+
+async function doConnectLazyFromSaved(): Promise<ConfigStatus | null> {
+  const parsed = parseSavedConfig();
+  if (!parsed) return null;
+
+  if (parsed.kind === 's3') {
+    syncStatus.preparing();
+    try {
+      await configureDirectS3(parsed.config);
+    } catch (e) {
+      syncStatus.error(e instanceof Error ? e.message : 'Connection failed');
+      throw e;
+    }
+    syncStatus.ready();
+    return statusForS3(getS3Config(), true, null);
+  }
+
+  syncStatus.preparing();
+  try {
+    await prepareStarfishFromCache(parsed.config);
+  } catch (e) {
+    syncStatus.error(e instanceof Error ? e.message : 'Connection failed');
+    throw e;
+  }
+  syncStatus.ready(); // cached data queryable — sections can render now
+
+  try {
+    let downloaded = 0;
+    const stats = await resyncStarfish((done, total) => {
+      downloaded = done;
+      syncStatus.downloading(done, total);
+    });
+    syncStatus.ready(downloaded > 0);
+    return statusForStarfish(getStarfishConfig(), true, null, stats);
+  } catch (e) {
+    // Cached data stays usable — surface the error without tearing down the UI.
+    syncStatus.error(e instanceof Error ? e.message : 'Background sync failed');
+    return statusForStarfish(getStarfishConfig(), true, null, getSyncStats());
+  }
+}
+
 // ── Config operations ─────────────────────────────────────────────────────────
 
 /** Return the current engine status (no network call). */
@@ -207,6 +324,7 @@ export async function saveConfig(input: ConfigInput, onProgress?: ProgressFn): P
     });
 
     const stats = await configureStarfish(parsed, onProgress);
+    syncStatus.ready();
     return statusForStarfish(getStarfishConfig(), true, null, stats);
   }
 
@@ -226,6 +344,7 @@ export async function saveConfig(input: ConfigInput, onProgress?: ProgressFn): P
   });
 
   await configureDirectS3(parsed.config);
+  syncStatus.ready();
   return statusForS3(getS3Config(), true, null);
 }
 
@@ -233,12 +352,26 @@ export async function saveConfig(input: ConfigInput, onProgress?: ProgressFn): P
 export async function clearConfig(): Promise<void> {
   await resetDb();
   sessionStorage.removeItem(BROWSER_CONFIG_KEY);
+  _lazyConnect = null;
+  syncStatus.reset();
 }
 
 /** Re-sync Starfish data — replaces POST /api/sync. */
 export async function triggerSync(onProgress?: ProgressFn): Promise<ConfigStatus> {
-  const stats = await resyncStarfish(onProgress);
-  return statusForStarfish(getStarfishConfig(), true, null, stats);
+  let downloaded = 0;
+  try {
+    const stats = await resyncStarfish((done, total) => {
+      downloaded = done;
+      syncStatus.downloading(done, total);
+      onProgress?.(done, total);
+    });
+    // Bump the data version so mounted sections re-query the fresh batches.
+    syncStatus.ready(downloaded > 0);
+    return statusForStarfish(getStarfishConfig(), true, null, stats);
+  } catch (e) {
+    syncStatus.error(e instanceof Error ? e.message : 'Sync failed');
+    throw e;
+  }
 }
 
 /** Add an app slug to the active Starfish connection and persist the updated list. */
@@ -247,6 +380,7 @@ export async function addStarfishApp(app: string, onProgress?: ProgressFn): Prom
   const cfg   = getStarfishConfig();
   const b     = loadBrowserConfig();
   if (b && cfg) saveBrowserConfig({ ...b, apps: cfg.apps });
+  syncStatus.ready();
   return statusForStarfish(cfg, true, null, stats);
 }
 
@@ -256,6 +390,7 @@ export async function removeStarfishApp(app: string): Promise<ConfigStatus> {
   const cfg   = getStarfishConfig();
   const b     = loadBrowserConfig();
   if (b && cfg) saveBrowserConfig({ ...b, apps: cfg.apps });
+  syncStatus.ready();
   return statusForStarfish(cfg, true, null, stats);
 }
 

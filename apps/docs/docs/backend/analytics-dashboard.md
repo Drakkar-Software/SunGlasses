@@ -50,6 +50,10 @@ Click **Refresh data** to pull new batches. Refresh only fetches batches written
 
 **Multiple apps:** all configured apps are synced and aggregated. Use the **app filter dropdown** in the top bar to narrow to a single app. After connecting you can also add or remove apps live from the sidebar without reconnecting.
 
+### Load on reload (lazy background sync)
+
+On reload with a saved connection the dashboard renders immediately — the sidebar, filters, and sections appear at once rather than behind a full-screen "Connecting…" spinner. The engine first registers the IndexedDB-cached batches (local, no network), so cached data is queryable straight away, then pulls any new batches in the background. Download progress appears in a top-bar indicator (`Downloading X / Y…`), and mounted sections re-query automatically once new data lands. A background-sync failure surfaces in the same indicator without hiding the dashboard — the cached data stays usable. First-ever connections (empty cache) show a brief "Preparing cached data…" placeholder in the content area while the engine initializes; Direct S3 reads live and has nothing to pre-download.
+
 ### Persistent local cache (IndexedDB)
 
 Parquet batch bytes are cached in **IndexedDB** (`sunglasses-dashboard` database, `parquet` store), keyed per app. On reload the dashboard reads bytes from IndexedDB first and only downloads batches that are genuinely new — eliminating full re-downloads on every page load.

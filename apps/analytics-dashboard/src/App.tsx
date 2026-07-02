@@ -1,23 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ConfigStatus, DateRangeParams } from './api';
 import {
-  canAutoConnectFromBrowser,
   clearConfig,
+  connectLazyFromSaved,
   daysAgo,
   fetchConfigStatus,
-  loadBrowserConfig,
-  saveConfig,
+  optimisticStatusFromSaved,
 } from './api';
 import { DataSourcePanel } from './components/DataSourcePanel';
 import { Sidebar } from './components/Sidebar';
 import type { Section } from './components/Sidebar';
 import { FilterBar } from './components/FilterBar';
+import { SyncStatusIndicator } from './components/SyncStatusIndicator';
 import { OverviewSection } from './components/sections/OverviewSection';
 import { EventsSection } from './components/sections/EventsSection';
 import { ScreensSection } from './components/sections/ScreensSection';
 import { ErrorsSection } from './components/sections/ErrorsSection';
 import { RetentionSection } from './components/sections/RetentionSection';
 import { QuerySection } from './components/sections/QuerySection';
+import { useDataVersion } from './hooks/useSyncStatus';
 
 // ── Loading / Error screens ───────────────────────────────────────────────────
 
@@ -35,6 +36,31 @@ function FullScreenLoading() {
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
         </svg>
         <p className="text-sm text-muted-fg">Connecting…</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Placeholder for the main content area while the engine registers cached
+ * data (WASM init + IndexedDB rehydrate — local, no download). The shell
+ * around it (sidebar, filters) is already interactive; background downloads
+ * happen after this clears, with progress in the top bar.
+ */
+function PreparingData() {
+  return (
+    <div className="flex items-center justify-center py-24" role="status" aria-live="polite">
+      <div className="flex flex-col items-center gap-3">
+        <svg
+          aria-hidden="true"
+          className="w-6 h-6 text-primary animate-spin"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
+        </svg>
+        <p className="text-sm text-muted-fg">Preparing cached data…</p>
       </div>
     </div>
   );
@@ -71,6 +97,17 @@ function AppShell({
     to:   daysAgo(0),
   });
 
+  // 0 until the engine has registered data; bumped when a sync changes it.
+  // Re-rendering here gives every section a fresh `range` identity, which
+  // re-runs their queries — and gates them off before the engine is ready.
+  const dataVersion = useDataVersion();
+  const engineReady = dataVersion > 0;
+
+  // Re-query the app dropdown once data lands (it keys off refreshKey, not range identity).
+  useEffect(() => {
+    if (dataVersion > 0) setSelectKey((k) => k + 1);
+  }, [dataVersion]);
+
   const rangeWithApp = { ...range, app: selectedApp };
 
   const handleDisconnect = useCallback(async () => {
@@ -104,17 +141,25 @@ function AppShell({
           onApp={setApp}
           onMenuOpen={() => setMobile(true)}
           appSelectKey={appSelectKey}
-        />
+        >
+          <SyncStatusIndicator />
+        </FilterBar>
 
         <main className="flex-1 overflow-y-auto p-5">
           <h1 className="sr-only">{SECTION_TITLE[section]}</h1>
 
-          {section === 'overview'  ? <OverviewSection  range={rangeWithApp} /> : null}
-          {section === 'events'    ? <EventsSection    range={rangeWithApp} /> : null}
-          {section === 'screens'   ? <ScreensSection   range={rangeWithApp} /> : null}
-          {section === 'errors'    ? <ErrorsSection    range={rangeWithApp} /> : null}
-          {section === 'retention' ? <RetentionSection range={rangeWithApp} /> : null}
-          {section === 'query'     ? <QuerySection /> : null}
+          {!engineReady ? (
+            <PreparingData />
+          ) : (
+            <>
+              {section === 'overview'  ? <OverviewSection  range={rangeWithApp} /> : null}
+              {section === 'events'    ? <EventsSection    range={rangeWithApp} /> : null}
+              {section === 'screens'   ? <ScreensSection   range={rangeWithApp} /> : null}
+              {section === 'errors'    ? <ErrorsSection    range={rangeWithApp} /> : null}
+              {section === 'retention' ? <RetentionSection range={rangeWithApp} /> : null}
+              {section === 'query'     ? <QuerySection /> : null}
+            </>
+          )}
         </main>
       </div>
     </div>
@@ -128,40 +173,37 @@ export function App() {
   const [configLoading, setConfigLoading] = useState(true);
   const [showSetup,     setShowSetup]     = useState(false);
 
-  // Boot: fetch status and optionally auto-connect from saved browser config
+  // Boot: render the shell immediately from the saved browser config (if any)
+  // and bring the engine up in the background — cached data first, then a
+  // lazy download of new batches with progress in the top-bar indicator.
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
       try {
-        let status = await fetchConfigStatus();
-        if (!cancelled && !status.ready && canAutoConnectFromBrowser()) {
-          const saved = loadBrowserConfig();
-          if (saved?.mode === 'starfish' && saved.baseUrl && saved.apps?.length) {
-            if (saved.publicRead || (saved.capJson && saved.devEdPrivHex)) {
-              try {
-                status = await saveConfig({
-                  source:       'starfish',
-                  baseUrl:      saved.baseUrl,
-                  apps:         saved.apps,
-                  publicRead:   saved.publicRead,
-                  cap:          saved.capJson,
-                  devEdPrivHex: saved.devEdPrivHex,
-                });
-              } catch { /* fall through to setup screen */ }
+        const status = await fetchConfigStatus();
+        if (!status.ready) {
+          const optimistic = optimisticStatusFromSaved();
+          if (optimistic) {
+            // Saved connection: show the dashboard now, connect lazily.
+            if (!cancelled) {
+              setConfigStatus(optimistic);
+              setConfigLoading(false);
             }
-          } else if (saved?.s3Bucket) {
             try {
-              status = await saveConfig({
-                source:          'direct_s3',
-                s3Bucket:        saved.s3Bucket,
-                s3Prefix:        saved.s3Prefix,
-                awsRegion:       saved.awsRegion,
-                endpointUrl:     saved.endpointUrl,
-                accessKeyId:     saved.accessKeyId,
-                secretAccessKey: saved.secretAccessKey,
-              });
-            } catch { /* fall through to setup screen */ }
+              const final = await connectLazyFromSaved();
+              if (!cancelled) setConfigStatus(final ?? status);
+            } catch (e) {
+              // Engine could not become ready at all — back to setup with the error.
+              if (!cancelled) {
+                setConfigStatus({
+                  ...optimistic,
+                  ready: false,
+                  error: e instanceof Error ? e.message : 'Connection failed',
+                });
+              }
+            }
+            return;
           }
         }
         if (!cancelled) setConfigStatus(status);

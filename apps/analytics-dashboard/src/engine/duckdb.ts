@@ -198,6 +198,28 @@ export async function configureDirectS3(config: S3Config): Promise<void> {
   }
 }
 
+/**
+ * Configure DuckDB for Starfish from the local cache only — no batch listing
+ * or downloading. Rehydrates each app's already-manifested batches from
+ * IndexedDB and registers them, so the dashboard can query cached data
+ * immediately on page reload; call resyncStarfish() afterwards (in the
+ * background) to pull anything new. On a first-ever connection the manifests
+ * are empty and this yields the zero-row events() macro.
+ */
+export async function prepareStarfishFromCache(config: StarfishConfig): Promise<SyncStats> {
+  try {
+    for (const app of config.apps) await rehydrateApp(config, app);
+    const stats = computeSyncStats(config.apps);
+    await setupStarfishCache(config, stats);
+    await testConnection();
+    return stats;
+  } catch (e) {
+    _ready     = false;
+    _lastError = e instanceof Error ? e.message : String(e);
+    throw new Error(_lastError);
+  }
+}
+
 /** Configure DuckDB for Starfish (sync all app batches into memory, then register). */
 export async function configureStarfish(
   config:      StarfishConfig,
