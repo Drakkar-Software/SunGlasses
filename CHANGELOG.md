@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.3] — 2026-07-02
+
+### Changed
+
+- **Analytics dashboard — instant load with lazy background sync** (`apps/analytics-dashboard`, 0.1.1 → 0.1.2): on reload with a saved connection the dashboard shell (sidebar, filters, sections) now renders immediately instead of blocking on a full-screen "Connecting…" spinner while every Parquet batch downloads. The engine first registers the IndexedDB-cached batches (local, fast) so cached data is queryable right away, then downloads any new batches in the background. Batch-download progress is shown in a new top-bar indicator (`Downloading X / Y…` with a progress bar), which also surfaces a background-sync error without tearing down the dashboard — cached data stays usable. Mounted sections automatically re-query once new data lands (via a new `dataVersion` signal in a lightweight sync-status store subscribed to with `useSyncExternalStore`). First-ever connections and Direct S3 are unchanged (S3 reads live, nothing to pre-download).
+
 ## [0.14.2] — 2026-07-02
 
 ### Fixed
